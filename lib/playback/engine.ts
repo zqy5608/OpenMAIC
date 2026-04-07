@@ -434,7 +434,7 @@ export class PlaybackEngine {
         };
 
         this.audioPlayer
-          .play(speechAction.audioId || '')
+          .play(speechAction.audioId || '', { fallbackText: speechAction.text })
           .then((audioStarted) => {
             if (!audioStarted) scheduleReadingTimer();
           })

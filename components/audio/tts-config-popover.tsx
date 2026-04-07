@@ -17,6 +17,9 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { getTTSVoices } from '@/lib/audio/constants';
 
+const TTS_PREVIEW_TEXT =
+  '\u4f60\u597d\uff0c\u6b22\u8fce\u6765\u5230AI\u8bfe\u5802\uff01\u8ba9\u6211\u4eec\u4e00\u8d77\u5b66\u4e60\u5427\u3002';
+
 /** Extract the English name from voice name format "ChineseName (English)" */
 function getVoiceDisplayName(name: string, lang: string): string {
   if (lang === 'en-US') {
@@ -36,6 +39,7 @@ export function TtsConfigPopover() {
   const setTTSEnabled = useSettingsStore((s) => s.setTTSEnabled);
   const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
+  const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
 
@@ -55,6 +59,9 @@ export function TtsConfigPopover() {
   const handlePreview = useCallback(async () => {
     if (previewing) {
       audioRef.current?.pause();
+      if (ttsProviderId === 'browser-native-tts' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
       audioRef.current = null;
       setPreviewing(false);
       return;
@@ -62,15 +69,31 @@ export function TtsConfigPopover() {
 
     setPreviewing(true);
     try {
+      if (ttsProviderId === 'browser-native-tts') {
+        if (!('speechSynthesis' in window)) {
+          throw new Error('Browser TTS is not supported');
+        }
+
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(TTS_PREVIEW_TEXT);
+        utterance.rate = ttsSpeed;
+        utterance.lang = locale === 'en-US' ? 'en-US' : 'zh-CN';
+        utterance.onend = () => setPreviewing(false);
+        utterance.onerror = () => setPreviewing(false);
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+
       const providerConfig = ttsProvidersConfig[ttsProviderId];
       const res = await fetch('/api/generate/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: '你好，欢迎来到AI课堂！让我们一起学习吧。',
+          text: TTS_PREVIEW_TEXT,
           audioId: 'preview',
           ttsProviderId: ttsProviderId,
           ttsVoice: ttsVoice,
+          ttsSpeed,
           ttsApiKey: providerConfig?.apiKey,
           ttsBaseUrl: providerConfig?.baseUrl,
         }),
@@ -95,7 +118,7 @@ export function TtsConfigPopover() {
     } catch {
       setPreviewing(false);
     }
-  }, [ttsProviderId, ttsVoice, ttsProvidersConfig, previewing]);
+  }, [ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig, previewing, locale]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

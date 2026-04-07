@@ -7,7 +7,9 @@
 
 import type { NextRequest } from 'next/server';
 import { getModel, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
-import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
+import { resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
+import { getOpenAICodexBaseUrl } from '@/lib/server/oauth/openai-codex';
+import { resolveProviderCredential } from '@/lib/server/provider-credentials';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 export interface ResolvedModel extends ModelWithInfo {
@@ -20,13 +22,13 @@ export interface ResolvedModel extends ModelWithInfo {
  *
  * Use this when model config comes from the request body.
  */
-export function resolveModel(params: {
+export async function resolveModel(params: {
   modelString?: string;
   apiKey?: string;
   baseUrl?: string;
   providerType?: string;
   requiresApiKey?: boolean;
-}): ResolvedModel {
+}): Promise<ResolvedModel> {
   const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-4o-mini';
   const { providerId, modelId } = parseModelString(modelString);
 
@@ -38,15 +40,22 @@ export function resolveModel(params: {
     }
   }
 
-  const apiKey = clientBaseUrl
-    ? params.apiKey || ''
-    : resolveApiKey(providerId, params.apiKey || '');
-  const baseUrl = clientBaseUrl ? clientBaseUrl : resolveBaseUrl(providerId, params.baseUrl);
+  const credential = await resolveProviderCredential({
+    providerId,
+    clientKey: params.apiKey || undefined,
+    allowServerFallback: !clientBaseUrl,
+  });
+  const resolvedBaseUrl = resolveBaseUrl(providerId, params.baseUrl);
+  const baseUrl = clientBaseUrl
+    ? clientBaseUrl
+    : providerId === 'openai-codex'
+      ? resolvedBaseUrl || getOpenAICodexBaseUrl()
+      : resolvedBaseUrl;
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({
     providerId,
     modelId,
-    apiKey,
+    apiKey: credential.token,
     baseUrl,
     proxy,
     providerType: params.providerType as 'openai' | 'anthropic' | 'google' | undefined,
@@ -61,7 +70,7 @@ export function resolveModel(params: {
  *
  * Reads: x-model, x-api-key, x-base-url, x-provider-type, x-requires-api-key
  */
-export function resolveModelFromHeaders(req: NextRequest): ResolvedModel {
+export function resolveModelFromHeaders(req: NextRequest): Promise<ResolvedModel> {
   return resolveModel({
     modelString: req.headers.get('x-model') || undefined,
     apiKey: req.headers.get('x-api-key') || undefined,

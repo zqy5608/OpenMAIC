@@ -55,6 +55,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'openai',
     defaultBaseUrl: 'https://api.openai.com/v1',
     requiresApiKey: true,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/openai.svg',
     models: [
       {
@@ -225,12 +227,92 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  'openai-codex': {
+    id: 'openai-codex',
+    name: 'OpenAI Codex',
+    type: 'openai',
+    defaultBaseUrl: 'https://chatgpt.com/backend-api/codex',
+    requiresApiKey: false,
+    authModes: ['oauth'],
+    defaultAuthMode: 'oauth',
+    oauthProviderId: 'openai-codex',
+    icon: '/logos/openai.svg',
+    models: [
+      {
+        id: 'gpt-5.4',
+        name: 'GPT-5.4',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.4-mini',
+        name: 'GPT-5.4-mini',
+        contextWindow: 272000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.3-codex',
+        name: 'GPT-5.3 Codex',
+        contextWindow: 272000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.3-codex-spark',
+        name: 'GPT-5.3 Codex Spark',
+        contextWindow: 128000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+    ],
+  },
+
   anthropic: {
     id: 'anthropic',
     name: 'Claude',
     type: 'anthropic',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.anthropic.com/v1',
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/claude.svg',
     models: [
       {
@@ -306,6 +388,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'google',
     requiresApiKey: true,
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/gemini.svg',
     models: [
       {
@@ -413,6 +497,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'openai',
     defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     requiresApiKey: true,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/glm.svg',
     models: [
       // GLM-5 Series - Latest flagship model
@@ -505,6 +591,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'openai',
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     requiresApiKey: true,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/qwen.svg',
     models: [
       {
@@ -544,6 +632,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'openai',
     defaultBaseUrl: 'https://api.deepseek.com/v1',
     requiresApiKey: true,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/deepseek.svg',
     models: [
       {
@@ -587,6 +677,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'openai',
     defaultBaseUrl: 'https://api.moonshot.cn/v1',
     requiresApiKey: true,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/kimi.png',
     models: [
       // K2.5 Series (2026) - 1T MoE, 32B active parameters
@@ -666,6 +758,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'anthropic',
     defaultBaseUrl: 'https://api.minimaxi.com/anthropic/v1',
     requiresApiKey: true,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/minimax.svg',
     models: [
       {
@@ -705,6 +799,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'openai',
     defaultBaseUrl: 'https://api.siliconflow.cn/v1',
     requiresApiKey: true,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/siliconflow.svg',
     models: [
       // DeepSeek Series
@@ -805,6 +901,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'openai',
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     requiresApiKey: true,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
     icon: '/logos/doubao.svg',
     models: [
       {
@@ -962,6 +1060,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         baseURL: effectiveBaseUrl,
       };
 
+      if (config.providerId === 'openai-codex') {
+        openaiOptions.name = 'openai-codex';
+      }
+
       // For OpenAI-compatible providers (not native OpenAI), add a fetch
       // wrapper that injects vendor-specific thinking params into the HTTP
       // body. The thinking config is read from AsyncLocalStorage, set by
@@ -974,16 +1076,43 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             | { getStore?: () => unknown }
             | undefined;
           const thinking = thinkingCtx?.getStore?.() as ThinkingConfig | undefined;
-          if (thinking && init?.body && typeof init.body === 'string') {
-            const extra = getCompatThinkingBodyParams(providerId, thinking);
-            if (extra) {
-              try {
-                const body = JSON.parse(init.body);
-                Object.assign(body, extra);
-                init = { ...init, body: JSON.stringify(body) };
-              } catch {
-                /* leave body as-is */
+          if (init?.body && typeof init.body === 'string') {
+            try {
+              const body = JSON.parse(init.body) as Record<string, unknown>;
+              let bodyChanged = false;
+
+              if (
+                providerId === 'openai-codex' &&
+                (typeof body.instructions !== 'string' || !body.instructions.trim())
+              ) {
+                body.instructions =
+                  'You are a helpful assistant. Follow the user request and return only the requested content.';
+                bodyChanged = true;
               }
+
+              if (providerId === 'openai-codex' && body.store !== false) {
+                body.store = false;
+                bodyChanged = true;
+              }
+
+              if (providerId === 'openai-codex' && 'max_output_tokens' in body) {
+                delete body.max_output_tokens;
+                bodyChanged = true;
+              }
+
+              if (thinking) {
+                const extra = getCompatThinkingBodyParams(providerId, thinking);
+                if (extra) {
+                  Object.assign(body, extra);
+                  bodyChanged = true;
+                }
+              }
+
+              if (bodyChanged) {
+                init = { ...init, body: JSON.stringify(body) };
+              }
+            } catch {
+              /* leave body as-is */
             }
           }
           return globalThis.fetch(url, init);
@@ -991,7 +1120,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       }
 
       const openai = createOpenAI(openaiOptions);
-      model = openai.chat(config.modelId);
+      model =
+        config.providerId === 'openai-codex'
+          ? openai.responses(config.modelId)
+          : openai.chat(config.modelId);
       break;
     }
 

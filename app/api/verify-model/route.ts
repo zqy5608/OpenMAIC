@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
-import { generateText } from 'ai';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { callLLM } from '@/lib/ai/llm';
 const log = createLogger('Verify Model');
 
 export async function POST(req: NextRequest) {
@@ -14,16 +14,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Parse model string and resolve server-side fallback
-    let languageModel;
+    let resolvedModel: Awaited<ReturnType<typeof resolveModel>>;
     try {
-      const result = resolveModel({
+      resolvedModel = await resolveModel({
         modelString: model,
         apiKey: apiKey || '',
         baseUrl: baseUrl || undefined,
         providerType,
         requiresApiKey,
       });
-      languageModel = result.model;
     } catch (error) {
       return apiError(
         'INVALID_REQUEST',
@@ -31,19 +30,37 @@ export async function POST(req: NextRequest) {
         error instanceof Error ? error.message : String(error),
       );
     }
+    const languageModel = resolvedModel.model;
 
     // Send a minimal test message
-    const { text } = await generateText({
-      model: languageModel,
-      prompt: 'Say "OK" if you can hear me.',
-    });
+    const { text } = await callLLM(
+      {
+        model: languageModel,
+        system: 'You are a connection test endpoint. Reply with exactly OK.',
+        prompt: 'Say "OK" if you can hear me.',
+      },
+      'verify-model',
+    );
 
     return apiSuccess({
       message: 'Connection successful',
       response: text,
     });
   } catch (error) {
-    log.error('API test error:', error);
+    const apiErrorDetails = error as {
+      requestBodyValues?: unknown;
+      responseBody?: unknown;
+      statusCode?: unknown;
+      url?: unknown;
+    };
+
+    log.error('API test error:', {
+      message: error instanceof Error ? error.message : String(error),
+      requestBodyValues: apiErrorDetails.requestBodyValues,
+      responseBody: apiErrorDetails.responseBody,
+      statusCode: apiErrorDetails.statusCode,
+      url: apiErrorDetails.url,
+    });
 
     let errorMessage = 'Connection failed';
     if (error instanceof Error) {

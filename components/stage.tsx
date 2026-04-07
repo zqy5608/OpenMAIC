@@ -456,6 +456,15 @@ export function Stage({
     audioPlayerRef.current.setPlaybackRate(playbackSpeed);
   }, [playbackSpeed]);
 
+  // Browser-native TTS is synthesized at playback time instead of pre-rendered.
+  const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
+  const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
+  useEffect(() => {
+    audioPlayerRef.current.setBrowserSpeechEnabled(
+      ttsEnabled && ttsProviderId === 'browser-native-tts',
+    );
+  }, [ttsEnabled, ttsProviderId]);
+
   /**
    * Handle discussion SSE — POST /api/chat and push events to engine
    */

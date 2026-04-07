@@ -7,6 +7,7 @@ import {
   getServerVideoProviders,
   getServerWebSearchProviders,
 } from '@/lib/server/provider-config';
+import { getOpenAICodexOAuthStatus } from '@/lib/server/oauth/openai-codex';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 
@@ -16,6 +17,9 @@ export async function GET() {
   try {
     return apiSuccess({
       providers: getServerProviders(),
+      oauth: {
+        'openai-codex': getOpenAICodexOAuthStatus(),
+      },
       tts: getServerTTSProviders(),
       asr: getServerASRProviders(),
       pdf: getServerPDFProviders(),

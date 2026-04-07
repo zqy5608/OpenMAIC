@@ -313,6 +313,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         defaultBaseUrl: providersConfig[selectedProviderId].defaultBaseUrl,
         icon: providersConfig[selectedProviderId].icon,
         requiresApiKey: providersConfig[selectedProviderId].requiresApiKey,
+        authModes: [providersConfig[selectedProviderId].authMode],
+        defaultAuthMode: providersConfig[selectedProviderId].authMode,
+        oauthProviderId: providersConfig[selectedProviderId].oauthProviderId,
         models: providersConfig[selectedProviderId].models,
       }
     : undefined;
@@ -416,6 +419,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         defaultBaseUrl: providerData.baseUrl || undefined,
         icon: providerData.icon || undefined,
         requiresApiKey: providerData.requiresApiKey,
+        authMode: 'apiKey',
+        oauthConnected: false,
         isBuiltIn: false,
       },
     };
@@ -1021,6 +1026,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         baseUrl={providersConfig[selectedProviderId]?.baseUrl}
         providerType={providersConfig[selectedProviderId]?.type}
         requiresApiKey={providersConfig[selectedProviderId]?.requiresApiKey}
+        authMode={providersConfig[selectedProviderId]?.authMode}
+        oauthConnected={providersConfig[selectedProviderId]?.oauthConnected}
+        isServerConfigured={providersConfig[selectedProviderId]?.isServerConfigured}
       />
 
       {/* Add Provider Dialog */}

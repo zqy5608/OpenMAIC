@@ -7,6 +7,7 @@
  */
 export type BuiltInProviderId =
   | 'openai'
+  | 'openai-codex'
   | 'anthropic'
   | 'google'
   | 'deepseek'
@@ -27,6 +28,10 @@ export type ProviderId = BuiltInProviderId | `custom-${string}`;
  * Provider API types
  */
 export type ProviderType = 'openai' | 'anthropic' | 'google';
+
+export type ProviderAuthMode = 'apiKey' | 'oauth';
+
+export type ProviderOAuthKind = 'openai-codex';
 
 /**
  * Describes a model's thinking/reasoning API control capability.
@@ -85,6 +90,9 @@ export interface ProviderConfig {
   type: ProviderType;
   defaultBaseUrl?: string;
   requiresApiKey: boolean;
+  authModes?: ProviderAuthMode[];
+  defaultAuthMode?: ProviderAuthMode;
+  oauthProviderId?: ProviderOAuthKind;
   icon?: string;
   models: ModelInfo[];
 }
@@ -100,4 +108,6 @@ export interface ModelConfig {
   proxy?: string; // Optional: HTTP proxy URL for this provider
   providerType?: ProviderType; // Optional: for custom providers on server-side
   requiresApiKey?: boolean; // Optional: for custom providers on server-side
+  authMode?: ProviderAuthMode;
+  oauthProviderId?: ProviderOAuthKind;
 }

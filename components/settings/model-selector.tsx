@@ -20,6 +20,11 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
+import {
+  getProviderSetupDescriptionKey,
+  isProviderAuthConfigured,
+  isProviderReadyForUse,
+} from '@/lib/utils/provider-config';
 import { formatContextWindow } from './utils';
 
 interface ModelSelectorProps {
@@ -69,12 +74,7 @@ export function ModelSelector({
   // - Has at least one model
   // - Has baseUrl or defaultBaseUrl configured
   const configuredProviders = Object.entries(providersConfig)
-    .filter(
-      ([, config]) =>
-        (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
-        config.models.length >= 1 &&
-        (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
-    )
+    .filter(([, config]) => isProviderReadyForUse(config))
     .map(([id, config]) => ({
       id: id as ProviderId,
       name: config.name,
@@ -138,16 +138,16 @@ export function ModelSelector({
       const providerConfig = providersConfig[pid];
       if (!providerConfig) return;
 
-      const apiKey = providerConfig.apiKey;
-      // Only send user-entered baseUrl; let server resolve fallback
-      const baseUrl = providerConfig.baseUrl;
-
-      if (providerConfig.requiresApiKey && !apiKey && !providerConfig.isServerConfigured) {
+      if (!isProviderAuthConfigured(providerConfig)) {
         setTestStatus('error');
-        setTestMessage(t('settings.apiKeyRequired'));
+        setTestMessage(t(getProviderSetupDescriptionKey(providerConfig)));
         setTestingModelId(mid);
         return;
       }
+
+      const apiKey = providerConfig.apiKey;
+      // Only send user-entered baseUrl; let server resolve fallback
+      const baseUrl = providerConfig.authMode === 'oauth' ? undefined : providerConfig.baseUrl;
 
       setTestStatus('testing');
       setTestMessage('');

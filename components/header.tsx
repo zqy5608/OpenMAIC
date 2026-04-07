@@ -21,6 +21,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
+import { isProviderAuthConfigured } from '@/lib/utils/provider-config';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -35,8 +36,10 @@ export function Header({ currentSceneTitle }: HeaderProps) {
   const [themeOpen, setThemeOpen] = useState(false);
 
   // Model setup state
+  const providerId = useSettingsStore((s) => s.providerId);
   const currentModelId = useSettingsStore((s) => s.modelId);
-  const needsSetup = !currentModelId;
+  const providersConfig = useSettingsStore((s) => s.providersConfig);
+  const needsSetup = !currentModelId || !isProviderAuthConfigured(providersConfig[providerId]);
 
   // Export
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();

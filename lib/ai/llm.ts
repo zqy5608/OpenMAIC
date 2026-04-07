@@ -39,6 +39,14 @@ function getModelId(params: GenerateTextParams | StreamTextParams): string {
   return 'unknown';
 }
 
+function getModelProvider(params: GenerateTextParams | StreamTextParams): string {
+  const m = params.model;
+  if (m && typeof m === 'object' && 'provider' in m) {
+    return (m as { provider: string }).provider;
+  }
+  return 'unknown';
+}
+
 // ---------------------------------------------------------------------------
 // Thinking / Reasoning Adapter
 //
@@ -77,7 +85,14 @@ function getGlobalThinkingConfig(): ThinkingConfig | undefined {
   return undefined;
 }
 
-type ProviderOptions = Record<string, Record<string, unknown>>;
+type ProviderOptionValue =
+  | string
+  | number
+  | boolean
+  | null
+  | ProviderOptionValue[]
+  | { [key: string]: ProviderOptionValue | undefined };
+type ProviderOptions = Record<string, { [key: string]: ProviderOptionValue | undefined }>;
 
 /**
  * Build providerOptions to disable thinking, using the lowest possible
@@ -260,6 +275,52 @@ function injectProviderOptions<T extends GenerateTextParams | StreamTextParams>(
   return params;
 }
 
+function withProviderOption(
+  params: GenerateTextParams | StreamTextParams,
+  provider: string,
+  option: { [key: string]: ProviderOptionValue | undefined },
+): GenerateTextParams | StreamTextParams {
+  const existing = (params as Record<string, unknown>).providerOptions as
+    | ProviderOptions
+    | undefined;
+
+  return {
+    ...params,
+    providerOptions: {
+      ...(existing ?? {}),
+      [provider]: {
+        ...(existing?.[provider] ?? {}),
+        ...option,
+      },
+    },
+  };
+}
+
+function injectCodexInstructions<T extends GenerateTextParams | StreamTextParams>(params: T): T {
+  if (getModelProvider(params) !== 'openai-codex.responses') {
+    return params;
+  }
+
+  const openaiOptions = (
+    (params as Record<string, unknown>).providerOptions as ProviderOptions | undefined
+  )?.openai;
+  if (typeof openaiOptions?.instructions === 'string' && openaiOptions.instructions.trim()) {
+    return params;
+  }
+
+  const system = (params as Record<string, unknown>).system;
+  const instructions =
+    typeof system === 'string' && system.trim()
+      ? system
+      : 'You are a helpful assistant. Follow the user request and return only the requested content.';
+
+  return withProviderOption(params, 'openai', { instructions }) as T;
+}
+
+function requiresCodexStreaming(params: GenerateTextParams | StreamTextParams): boolean {
+  return getModelProvider(params) === 'openai-codex.responses';
+}
+
 /**
  * Options for LLM call retry on validation failure.
  * This is separate from the AI SDK's built-in maxRetries (which handles network/5xx errors).
@@ -300,14 +361,23 @@ export async function callLLM<T extends GenerateTextParams>(
     try {
       // Resolve effective thinking config: per-call > global env > undefined
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-      const injectedParams = injectProviderOptions(params, effectiveThinking);
+      const injectedParams = injectCodexInstructions(
+        injectProviderOptions(params, effectiveThinking),
+      );
 
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
       // can read the config and inject vendor-specific body params for
       // OpenAI-compatible providers.
-      const result = await thinkingContext.run(effectiveThinking, () =>
-        generateText(injectedParams),
-      );
+      const result = await thinkingContext.run(effectiveThinking, async () => {
+        if (requiresCodexStreaming(injectedParams)) {
+          const streamResult = streamText(injectedParams as unknown as StreamTextParams);
+          const text = await streamResult.text;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return { text } as GenerateTextResult<any, any>;
+        }
+
+        return generateText(injectedParams);
+      });
 
       // Validate result (only when retries are configured)
       if (validate && !validate(result.text)) {
@@ -351,7 +421,7 @@ export function streamLLM<T extends StreamTextParams>(
 ): StreamTextResult<any, any> {
   // Resolve effective thinking config and wrap in thinkingContext
   const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-  const injectedParams = injectProviderOptions(params, effectiveThinking);
+  const injectedParams = injectCodexInstructions(injectProviderOptions(params, effectiveThinking));
   const result = thinkingContext.run(effectiveThinking, () => streamText(injectedParams));
 
   return result;

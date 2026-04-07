@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Model resolution from request headers ──
-    const { model: languageModel, modelString } = resolveModelFromHeaders(req);
+    const { model: languageModel, modelString } = await resolveModelFromHeaders(req);
 
     // ── Build prompt ──
     const sceneSummary = sceneOutlines?.length

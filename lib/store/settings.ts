@@ -246,6 +246,10 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
       defaultBaseUrl: provider.defaultBaseUrl,
       icon: provider.icon,
       requiresApiKey: provider.requiresApiKey,
+      authMode: provider.defaultAuthMode || 'apiKey',
+      oauthProviderId: provider.oauthProviderId,
+      oauthConnected: false,
+      oauthCredentialSource: undefined,
       isBuiltIn: true,
     };
   });
@@ -344,6 +348,13 @@ function ensureBuiltInProviders(state: Partial<SettingsState>): void {
         defaultBaseUrl: existing.defaultBaseUrl || provider.defaultBaseUrl,
         icon: provider.icon || existing.icon,
         requiresApiKey: existing.requiresApiKey ?? provider.requiresApiKey,
+        authMode: existing.authMode ?? provider.defaultAuthMode ?? 'apiKey',
+        oauthProviderId: existing.oauthProviderId ?? provider.oauthProviderId,
+        oauthConnected: existing.oauthConnected ?? false,
+        oauthAccountLabel: existing.oauthAccountLabel,
+        oauthExpiresAt: existing.oauthExpiresAt,
+        oauthLastError: existing.oauthLastError,
+        oauthCredentialSource: existing.oauthCredentialSource,
         isBuiltIn: existing.isBuiltIn ?? true,
       };
     }
@@ -624,6 +635,16 @@ export const useSettingsStore = create<SettingsState>()(
             if (!res.ok) return;
             const data = (await res.json()) as {
               providers: Record<string, { models?: string[]; baseUrl?: string }>;
+              oauth: Record<
+                string,
+                {
+                  connected: boolean;
+                  accountLabel?: string;
+                  expiresAt?: string;
+                  lastError?: string;
+                  credentialSource?: 'openmaic' | 'codex-cli';
+                }
+              >;
               tts: Record<string, { baseUrl?: string }>;
               asr: Record<string, { baseUrl?: string }>;
               pdf: Record<string, { baseUrl?: string }>;
@@ -644,6 +665,11 @@ export const useSettingsStore = create<SettingsState>()(
                     isServerConfigured: false,
                     serverModels: undefined,
                     serverBaseUrl: undefined,
+                    oauthConnected: false,
+                    oauthAccountLabel: undefined,
+                    oauthExpiresAt: undefined,
+                    oauthLastError: undefined,
+                    oauthCredentialSource: undefined,
                   };
                 }
               }
@@ -662,6 +688,19 @@ export const useSettingsStore = create<SettingsState>()(
                     serverModels: info.models,
                     serverBaseUrl: info.baseUrl,
                     models: filteredModels,
+                  };
+                }
+              }
+              for (const [pid, info] of Object.entries(data.oauth || {})) {
+                const key = pid as ProviderId;
+                if (newProvidersConfig[key]) {
+                  newProvidersConfig[key] = {
+                    ...newProvidersConfig[key],
+                    oauthConnected: info.connected,
+                    oauthAccountLabel: info.accountLabel,
+                    oauthExpiresAt: info.expiresAt,
+                    oauthLastError: info.lastError,
+                    oauthCredentialSource: info.credentialSource,
                   };
                 }
               }
@@ -876,7 +915,7 @@ export const useSettingsStore = create<SettingsState>()(
               let autoModelId: string | undefined;
               if (!state.modelId) {
                 for (const [pid, cfg] of Object.entries(newProvidersConfig)) {
-                  if (cfg.isServerConfigured) {
+                  if (cfg.isServerConfigured || cfg.oauthConnected) {
                     // Prefer server-restricted models, fall back to built-in list
                     const serverModels = cfg.serverModels;
                     const modelId = serverModels?.length
@@ -947,6 +986,19 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Ensure providersConfig has all built-in providers (also in merge below)
         ensureBuiltInProviders(state);
+
+        if (state.providersConfig) {
+          for (const [pid, config] of Object.entries(state.providersConfig)) {
+            const provider = PROVIDERS[pid as ProviderId];
+            state.providersConfig[pid as ProviderId] = {
+              ...config,
+              authMode: config.authMode ?? provider?.defaultAuthMode ?? 'apiKey',
+              oauthProviderId: config.oauthProviderId ?? provider?.oauthProviderId,
+              oauthConnected: config.oauthConnected ?? false,
+              oauthCredentialSource: config.oauthCredentialSource,
+            };
+          }
+        }
 
         // Migrate from old ttsModel to new ttsProviderId
         if (state.ttsModel && !state.ttsProviderId) {

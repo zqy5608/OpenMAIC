@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     // Get API configuration from request headers
-    const { model: languageModel, modelInfo, modelString } = resolveModelFromHeaders(req);
+    const { model: languageModel, modelInfo, modelString } = await resolveModelFromHeaders(req);
 
     if (!body.requirements) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');

@@ -21,6 +21,7 @@ import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
+import { isProviderReadyForUse } from '@/lib/utils/provider-config';
 
 // ─── Constants ───────────────────────────────────────────────
 const MAX_PDF_SIZE_MB = 50;
@@ -76,12 +77,7 @@ export function GenerationToolbar({
   // Configured LLM providers (only those with valid credentials + models + endpoint)
   const configuredProviders = providersConfig
     ? Object.entries(providersConfig)
-        .filter(
-          ([, config]) =>
-            (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
-            config.models.length >= 1 &&
-            (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
-        )
+        .filter(([, config]) => isProviderReadyForUse(config))
         .map(([id, config]) => ({
           id: id as ProviderId,
           name: config.name,

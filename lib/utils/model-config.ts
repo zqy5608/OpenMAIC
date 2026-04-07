@@ -15,9 +15,12 @@ export function getCurrentModelConfig() {
     modelId,
     modelString,
     apiKey: providerConfig?.apiKey || '',
-    baseUrl: providerConfig?.baseUrl || '',
+    baseUrl: providerConfig?.authMode === 'oauth' ? '' : providerConfig?.baseUrl || '',
     providerType: providerConfig?.type,
     requiresApiKey: providerConfig?.requiresApiKey,
     isServerConfigured: providerConfig?.isServerConfigured,
+    authMode: providerConfig?.authMode,
+    oauthProviderId: providerConfig?.oauthProviderId,
+    oauthConnected: providerConfig?.oauthConnected,
   };
 }

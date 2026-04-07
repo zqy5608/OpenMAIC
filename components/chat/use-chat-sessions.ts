@@ -18,6 +18,10 @@ import { useUserProfileStore } from '@/lib/store/user-profile';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import {
+  getProviderSetupDescriptionKey,
+  isProviderAuthConfigured,
+} from '@/lib/utils/provider-config';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import { processSSEStream } from './process-sse-stream';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
@@ -882,9 +886,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         toast.error(t('settings.modelNotConfigured'));
         return;
       }
-      if (modelConfig.requiresApiKey && !modelConfig.apiKey && !modelConfig.isServerConfigured) {
+      if (!isProviderAuthConfigured(modelConfig)) {
         toast.error(t('settings.setupNeeded'), {
-          description: t('settings.apiKeyDesc'),
+          description: t(getProviderSetupDescriptionKey(modelConfig)),
         });
         return;
       }
@@ -1073,9 +1077,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         toast.error(t('settings.modelNotConfigured'));
         return;
       }
-      if (modelConfig.requiresApiKey && !modelConfig.apiKey && !modelConfig.isServerConfigured) {
+      if (!isProviderAuthConfigured(modelConfig)) {
         toast.error(t('settings.setupNeeded'), {
-          description: t('settings.apiKeyDesc'),
+          description: t(getProviderSetupDescriptionKey(modelConfig)),
         });
         return;
       }

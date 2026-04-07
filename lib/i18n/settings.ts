@@ -79,6 +79,7 @@ export const settingsZhCN = {
     addProviderDescription: '添加自定义模型提供方以扩展可用的AI模型',
     providerNames: {
       openai: 'OpenAI',
+      'openai-codex': 'OpenAI Codex',
       anthropic: 'Claude',
       google: 'Gemini',
       deepseek: 'DeepSeek',
@@ -87,6 +88,7 @@ export const settingsZhCN = {
       minimax: 'MiniMax',
       glm: 'GLM',
       siliconflow: '硅基流动',
+      doubao: '豆包',
     },
     providerTypes: {
       openai: 'OpenAI 协议',
@@ -115,6 +117,22 @@ export const settingsZhCN = {
     fetch: '获取',
     connectionSuccess: '连接成功',
     connectionFailed: '连接失败',
+    oauthAuthorization: 'OAuth 授权',
+    oauthConnectionRequired: '请先完成 OAuth 连接',
+    oauthConnect: '连接 OpenAI',
+    oauthReconnect: '重新连接',
+    oauthDisconnect: '断开连接',
+    oauthConnected: '已连接',
+    oauthNotConnected: '未连接',
+    oauthConnectedAs: '连接账号',
+    oauthExpiresAt: '过期时间',
+    oauthConnectSuccess: 'OAuth 连接成功',
+    oauthConnectFailed: 'OAuth 连接失败',
+    oauthDisconnectSuccess: 'OAuth 已断开',
+    oauthPopupBlocked: '浏览器拦截了登录弹窗，请允许弹窗后重试',
+    oauthProviderNotice: '通过 OpenAI Subscription 完成授权，令牌仅保存在服务端。',
+    oauthCodexCliSourceNotice:
+      '正在复用本机 Codex CLI 登录；断开连接只会清除 OpenMAIC 本地令牌，不会退出 Codex CLI。',
     // Model capabilities
     capabilities: {
       vision: '视觉',
@@ -661,6 +679,7 @@ export const settingsEnUS = {
     addProviderDescription: 'Add custom model providers to extend available AI models',
     providerNames: {
       openai: 'OpenAI',
+      'openai-codex': 'OpenAI Codex',
       anthropic: 'Claude',
       google: 'Gemini',
       deepseek: 'DeepSeek',
@@ -669,6 +688,7 @@ export const settingsEnUS = {
       minimax: 'MiniMax',
       glm: 'GLM',
       siliconflow: 'SiliconFlow',
+      doubao: 'Doubao',
     },
     providerTypes: {
       openai: 'OpenAI Protocol',
@@ -697,6 +717,22 @@ export const settingsEnUS = {
     fetch: 'Fetch',
     connectionSuccess: 'Connection successful',
     connectionFailed: 'Connection failed',
+    oauthAuthorization: 'OAuth Authorization',
+    oauthConnectionRequired: 'Connect OAuth before using this provider',
+    oauthConnect: 'Connect OpenAI',
+    oauthReconnect: 'Reconnect',
+    oauthDisconnect: 'Disconnect',
+    oauthConnected: 'Connected',
+    oauthNotConnected: 'Not connected',
+    oauthConnectedAs: 'Connected account',
+    oauthExpiresAt: 'Expires at',
+    oauthConnectSuccess: 'OAuth connected successfully',
+    oauthConnectFailed: 'OAuth connection failed',
+    oauthDisconnectSuccess: 'OAuth disconnected',
+    oauthPopupBlocked: 'The login popup was blocked. Please allow popups and try again.',
+    oauthProviderNotice: 'Uses your OpenAI Subscription through server-side OAuth token storage.',
+    oauthCodexCliSourceNotice:
+      'Using the Codex CLI login on this machine; disconnecting only clears OpenMAIC local tokens and does not sign out of Codex CLI.',
     // Model capabilities
     capabilities: {
       vision: 'Vision',

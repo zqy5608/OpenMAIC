@@ -10,6 +10,11 @@ import { Sparkles, Wrench, Zap, Loader2, CheckCircle, XCircle } from 'lucide-rea
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { EditingModel } from '@/lib/types/settings';
 import type { ProviderId } from '@/lib/ai/providers';
+import type { ProviderAuthMode } from '@/lib/types/provider';
+import {
+  getProviderSetupDescriptionKey,
+  isProviderAuthConfigured,
+} from '@/lib/utils/provider-config';
 import { cn } from '@/lib/utils';
 
 interface ModelEditDialogProps {
@@ -24,6 +29,9 @@ interface ModelEditDialogProps {
   baseUrl?: string;
   providerType?: string;
   requiresApiKey?: boolean;
+  authMode?: ProviderAuthMode;
+  oauthConnected?: boolean;
+  isServerConfigured?: boolean;
 }
 
 export function ModelEditDialog({
@@ -38,10 +46,21 @@ export function ModelEditDialog({
   baseUrl,
   providerType,
   requiresApiKey,
+  authMode,
+  oauthConnected,
+  isServerConfigured,
 }: ModelEditDialogProps) {
   const { t } = useI18n();
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
+  const authConfigured = isProviderAuthConfigured({
+    apiKey,
+    baseUrl,
+    requiresApiKey,
+    authMode,
+    oauthConnected,
+    isServerConfigured,
+  });
 
   // Reset test status when dialog closes
   useEffect(() => {
@@ -59,9 +78,19 @@ export function ModelEditDialog({
   };
 
   const handleTestModel = useCallback(async () => {
-    if (!editingModel || !apiKey) {
+    if (!editingModel || !authConfigured) {
       setTestStatus('error');
-      setTestMessage(t('settings.apiKeyRequired') || 'API Key is required');
+      setTestMessage(
+        t(
+          getProviderSetupDescriptionKey({
+            apiKey,
+            requiresApiKey,
+            authMode,
+            oauthConnected,
+            isServerConfigured,
+          }),
+        ),
+      );
       return;
     }
 
@@ -73,8 +102,8 @@ export function ModelEditDialog({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          apiKey,
-          baseUrl,
+          apiKey: authMode === 'oauth' ? '' : apiKey,
+          baseUrl: authMode === 'oauth' ? undefined : baseUrl,
           model: `${providerId}:${editingModel.model.id}`,
           providerType,
           requiresApiKey,
@@ -94,7 +123,19 @@ export function ModelEditDialog({
       setTestStatus('error');
       setTestMessage(t('settings.connectionFailed'));
     }
-  }, [editingModel, apiKey, baseUrl, providerId, providerType, requiresApiKey, t]);
+  }, [
+    authConfigured,
+    authMode,
+    apiKey,
+    baseUrl,
+    editingModel,
+    isServerConfigured,
+    oauthConnected,
+    providerId,
+    providerType,
+    requiresApiKey,
+    t,
+  ]);
 
   if (!editingModel) return null;
 

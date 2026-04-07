@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,6 +35,11 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderConfig } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
+import { useSettingsStore } from '@/lib/store/settings';
+import {
+  getProviderSetupDescriptionKey,
+  isProviderAuthConfigured,
+} from '@/lib/utils/provider-config';
 import { formatContextWindow } from './utils';
 import { cn } from '@/lib/utils';
 
@@ -67,6 +73,7 @@ export function ProviderConfigPanel({
   isBuiltIn,
 }: ProviderConfigPanelProps) {
   const { t } = useI18n();
+  const fetchServerProviders = useSettingsStore((state) => state.fetchServerProviders);
 
   // Local state for this provider
   const [apiKey, setApiKey] = useState(initialApiKey);
@@ -76,10 +83,31 @@ export function ProviderConfigPanel({
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [oauthAction, setOauthAction] = useState<'idle' | 'connecting' | 'disconnecting'>('idle');
+
+  const providerState = providersConfig[provider.id];
+  const authMode = providerState?.authMode ?? provider.defaultAuthMode ?? 'apiKey';
+  const isOAuthProvider = authMode === 'oauth';
+  const oauthProviderId = providerState?.oauthProviderId ?? provider.oauthProviderId;
+  const oauthConnected = !!providerState?.oauthConnected;
+  const oauthAccountLabel = providerState?.oauthAccountLabel;
+  const oauthExpiresAt = providerState?.oauthExpiresAt;
+  const oauthLastError = providerState?.oauthLastError;
+  const oauthCredentialSource = providerState?.oauthCredentialSource;
+  const isServerConfigured = providerState?.isServerConfigured;
+  const models = providerState?.models || [];
+  const effectiveBaseUrl = isOAuthProvider
+    ? provider.defaultBaseUrl || baseUrl
+    : baseUrl || provider.defaultBaseUrl || '';
+  const authConfigured = isProviderAuthConfigured({
+    ...(providerState || {}),
+    apiKey,
+    baseUrl,
+    requiresApiKey,
+  });
 
   // Update local state when provider changes or initial values change
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync local state from props on provider change
     setApiKey(initialApiKey);
 
     setBaseUrl(initialBaseUrl);
@@ -89,7 +117,48 @@ export function ProviderConfigPanel({
     setTestStatus('idle');
 
     setTestMessage('');
+    setOauthAction('idle');
   }, [provider.id, initialApiKey, initialBaseUrl, initialRequiresApiKey]);
+
+  useEffect(() => {
+    if (!isOAuthProvider) {
+      return;
+    }
+
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
+      const data = event.data as
+        | {
+            source?: string;
+            provider?: string;
+            success?: boolean;
+            error?: string;
+          }
+        | undefined;
+
+      if (!data || data.source !== 'openmaic-oauth' || data.provider !== oauthProviderId) {
+        return;
+      }
+
+      setOauthAction('idle');
+      await fetchServerProviders();
+
+      if (data.success) {
+        setTestStatus('idle');
+        setTestMessage('');
+        toast.success(t('settings.oauthConnectSuccess'));
+      } else {
+        const errorMessage = data.error || t('settings.oauthConnectFailed');
+        setTestStatus('error');
+        setTestMessage(errorMessage);
+        toast.error(errorMessage);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [fetchServerProviders, isOAuthProvider, oauthProviderId, t]);
 
   // Notify parent of changes
   const handleApiKeyChange = (key: string) => {
@@ -111,7 +180,13 @@ export function ProviderConfigPanel({
     setTestStatus('testing');
     setTestMessage('');
 
-    const availableModels = providersConfig[provider.id]?.models || [];
+    if (!authConfigured) {
+      setTestStatus('error');
+      setTestMessage(t(getProviderSetupDescriptionKey(providerState)));
+      return;
+    }
+
+    const availableModels = providerState?.models || [];
 
     if (availableModels.length === 0) {
       setTestStatus('error');
@@ -126,8 +201,8 @@ export function ProviderConfigPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          apiKey,
-          baseUrl,
+          apiKey: isOAuthProvider ? '' : apiKey,
+          baseUrl: isOAuthProvider ? undefined : baseUrl,
           model: `${provider.id}:${testModelId}`,
           providerType: provider.type,
           requiresApiKey: requiresApiKey,
@@ -147,10 +222,102 @@ export function ProviderConfigPanel({
       setTestStatus('error');
       setTestMessage(t('settings.connectionFailed'));
     }
-  }, [apiKey, baseUrl, provider.id, provider.type, requiresApiKey, providersConfig, t]);
+  }, [
+    apiKey,
+    authConfigured,
+    baseUrl,
+    isOAuthProvider,
+    provider.id,
+    provider.type,
+    providerState,
+    requiresApiKey,
+    t,
+  ]);
 
-  const models = providersConfig[provider.id]?.models || [];
-  const isServerConfigured = providersConfig[provider.id]?.isServerConfigured;
+  const handleConnectOAuth = useCallback(() => {
+    if (oauthProviderId !== 'openai-codex') return;
+
+    const popup = window.open(
+      '/api/oauth/openai-codex/start',
+      'openmaic-openai-codex-oauth',
+      'width=620,height=720,resizable=yes,scrollbars=yes',
+    );
+
+    if (!popup) {
+      toast.error(t('settings.oauthPopupBlocked'));
+      return;
+    }
+
+    setTestStatus('idle');
+    setTestMessage('');
+    setOauthAction('connecting');
+    popup.focus();
+
+    const timer = window.setInterval(() => {
+      if (!popup.closed) return;
+      window.clearInterval(timer);
+      setOauthAction((current) => (current === 'connecting' ? 'idle' : current));
+    }, 500);
+  }, [oauthProviderId, t]);
+
+  const handleDisconnectOAuth = useCallback(async () => {
+    if (oauthProviderId !== 'openai-codex') return;
+
+    setOauthAction('disconnecting');
+    try {
+      const response = await fetch('/api/oauth/openai-codex/logout', {
+        method: 'POST',
+      });
+      const data = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || t('settings.connectionFailed'));
+      }
+
+      await fetchServerProviders();
+      setTestStatus('idle');
+      setTestMessage('');
+      toast.success(t('settings.oauthDisconnectSuccess'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('settings.connectionFailed'));
+    } finally {
+      setOauthAction('idle');
+    }
+  }, [fetchServerProviders, oauthProviderId, t]);
+
+  const renderTestMessage = () => {
+    if (!testMessage) return null;
+
+    return (
+      <div
+        className={cn(
+          'rounded-lg p-3 text-sm overflow-hidden',
+          testStatus === 'success' && 'bg-green-50 text-green-700 border border-green-200',
+          testStatus === 'error' && 'bg-red-50 text-red-700 border border-red-200',
+        )}
+      >
+        <div className="flex items-start gap-2 min-w-0">
+          {testStatus === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />}
+          {testStatus === 'error' && <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+          <p className="flex-1 min-w-0 break-all">{testMessage}</p>
+        </div>
+      </div>
+    );
+  };
+
+  const formatTimestamp = (value?: string) => {
+    if (!value) return null;
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString();
+  };
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -161,80 +328,163 @@ export function ProviderConfigPanel({
         </div>
       )}
 
-      {/* API Key */}
-      <div className="space-y-2">
-        <Label>{t('settings.apiSecret')}</Label>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Input
-              type={showApiKey ? 'text' : 'password'}
-              placeholder={isServerConfigured ? t('settings.optionalOverride') : 'sk-...'}
-              value={apiKey}
-              onChange={(e) => handleApiKeyChange(e.target.value)}
-              onBlur={onSave}
-              disabled={!requiresApiKey && !isServerConfigured}
-              className="h-8 pr-8"
-            />
-            <button
-              type="button"
-              onClick={() => setShowApiKey(!showApiKey)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              disabled={!requiresApiKey}
-            >
-              {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleTestApi}
-            disabled={
-              testStatus === 'testing' || (requiresApiKey && !apiKey && !isServerConfigured)
-            }
-            className="gap-1.5"
-          >
-            {testStatus === 'testing' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <>
-                <Zap className="h-3.5 w-3.5" />
-                {t('settings.testConnection')}
-              </>
-            )}
-          </Button>
-        </div>
-        {testMessage && (
-          <div
-            className={cn(
-              'rounded-lg p-3 text-sm overflow-hidden',
-              testStatus === 'success' && 'bg-green-50 text-green-700 border border-green-200',
-              testStatus === 'error' && 'bg-red-50 text-red-700 border border-red-200',
-            )}
-          >
-            <div className="flex items-start gap-2 min-w-0">
-              {testStatus === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />}
-              {testStatus === 'error' && <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
-              <p className="flex-1 min-w-0 break-all">{testMessage}</p>
+      {/* OAuth */}
+      {isOAuthProvider && (
+        <div className="space-y-3">
+          <Label>{t('settings.oauthAuthorization')}</Label>
+          <div className="rounded-xl border bg-card p-4 space-y-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  {oauthConnected ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <span className="font-medium">
+                    {oauthConnected
+                      ? t('settings.oauthConnected')
+                      : t('settings.oauthNotConnected')}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">{t('settings.oauthProviderNotice')}</p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleConnectOAuth}
+                  disabled={oauthAction === 'connecting'}
+                  className="gap-1.5"
+                >
+                  {oauthAction === 'connecting' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Zap className="h-3.5 w-3.5" />
+                  )}
+                  {oauthConnected ? t('settings.oauthReconnect') : t('settings.oauthConnect')}
+                </Button>
+                {oauthConnected && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDisconnectOAuth}
+                    disabled={oauthAction === 'disconnecting'}
+                    className="gap-1.5"
+                  >
+                    {oauthAction === 'disconnecting' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    )}
+                    {t('settings.oauthDisconnect')}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestApi}
+                  disabled={testStatus === 'testing' || !oauthConnected}
+                  className="gap-1.5"
+                >
+                  {testStatus === 'testing' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Zap className="h-3.5 w-3.5" />
+                      {t('settings.testConnection')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1 text-sm">
+              {oauthAccountLabel && (
+                <p>
+                  {t('settings.oauthConnectedAs')}:{' '}
+                  <span className="font-medium">{oauthAccountLabel}</span>
+                </p>
+              )}
+              {oauthExpiresAt && (
+                <p>
+                  {t('settings.oauthExpiresAt')}:{' '}
+                  <span className="font-medium">{formatTimestamp(oauthExpiresAt)}</span>
+                </p>
+              )}
+              {oauthCredentialSource === 'codex-cli' && (
+                <p className="text-muted-foreground">{t('settings.oauthCodexCliSourceNotice')}</p>
+              )}
+              {oauthLastError && (
+                <p className="text-red-600 dark:text-red-400 break-all">{oauthLastError}</p>
+              )}
             </div>
           </div>
-        )}
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id={`requires-api-key-${provider.id}`}
-            checked={requiresApiKey}
-            onCheckedChange={(checked) => {
-              handleRequiresApiKeyChange(checked as boolean);
-              onSave();
-            }}
-          />
-          <label
-            htmlFor={`requires-api-key-${provider.id}`}
-            className="text-sm cursor-pointer text-muted-foreground"
-          >
-            {t('settings.requiresApiKey')}
-          </label>
+          {renderTestMessage()}
         </div>
-      </div>
+      )}
+
+      {/* API Key */}
+      {!isOAuthProvider && (
+        <div className="space-y-2">
+          <Label>{t('settings.apiSecret')}</Label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Input
+                type={showApiKey ? 'text' : 'password'}
+                placeholder={isServerConfigured ? t('settings.optionalOverride') : 'sk-...'}
+                value={apiKey}
+                onChange={(e) => handleApiKeyChange(e.target.value)}
+                onBlur={onSave}
+                disabled={!requiresApiKey && !isServerConfigured}
+                className="h-8 pr-8"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                disabled={!requiresApiKey}
+              >
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTestApi}
+              disabled={testStatus === 'testing' || !authConfigured}
+              className="gap-1.5"
+            >
+              {testStatus === 'testing' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <>
+                  <Zap className="h-3.5 w-3.5" />
+                  {t('settings.testConnection')}
+                </>
+              )}
+            </Button>
+          </div>
+          {renderTestMessage()}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id={`requires-api-key-${provider.id}`}
+              checked={requiresApiKey}
+              onCheckedChange={(checked) => {
+                handleRequiresApiKeyChange(checked as boolean);
+                onSave();
+              }}
+            />
+            <label
+              htmlFor={`requires-api-key-${provider.id}`}
+              className="text-sm cursor-pointer text-muted-foreground"
+            >
+              {t('settings.requiresApiKey')}
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* API Host */}
       <div className="space-y-2">
@@ -242,29 +492,33 @@ export function ProviderConfigPanel({
         <Input
           type="url"
           placeholder={provider.defaultBaseUrl || 'https://api.example.com/v1'}
-          value={baseUrl}
+          value={effectiveBaseUrl}
           onChange={(e) => handleBaseUrlChange(e.target.value)}
           onBlur={onSave}
           className="h-8"
+          disabled={isOAuthProvider}
         />
         {(() => {
-          const effectiveBaseUrl = baseUrl || provider.defaultBaseUrl || '';
           if (!effectiveBaseUrl) return null;
 
           // Generate endpoint path based on provider type
           let endpointPath = '';
-          switch (provider.type) {
-            case 'openai':
-              endpointPath = '/chat/completions';
-              break;
-            case 'anthropic':
-              endpointPath = '/messages';
-              break;
-            case 'google':
-              endpointPath = '/models/[model]';
-              break;
-            default:
-              endpointPath = '';
+          if (provider.id === 'openai-codex') {
+            endpointPath = '/responses';
+          } else {
+            switch (provider.type) {
+              case 'openai':
+                endpointPath = '/chat/completions';
+                break;
+              case 'anthropic':
+                endpointPath = '/messages';
+                break;
+              case 'google':
+                endpointPath = '/models/[model]';
+                break;
+              default:
+                endpointPath = '';
+            }
           }
 
           const fullUrl = effectiveBaseUrl + endpointPath;

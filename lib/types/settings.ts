@@ -1,4 +1,10 @@
-import type { ProviderId, ModelInfo, ProviderType } from '@/lib/types/provider';
+import type {
+  ProviderId,
+  ModelInfo,
+  ProviderType,
+  ProviderAuthMode,
+  ProviderOAuthKind,
+} from '@/lib/types/provider';
 
 export type SettingsSection =
   | 'general'
@@ -28,6 +34,13 @@ export interface ProviderSettings {
   defaultBaseUrl?: string;
   icon?: string;
   requiresApiKey: boolean;
+  authMode: ProviderAuthMode;
+  oauthProviderId?: ProviderOAuthKind;
+  oauthConnected?: boolean;
+  oauthAccountLabel?: string;
+  oauthExpiresAt?: string;
+  oauthLastError?: string;
+  oauthCredentialSource?: 'openmaic' | 'codex-cli';
   isBuiltIn: boolean; // true for built-in providers, false for custom
 
   // Server-side configuration (set by fetchServerProviders)

@@ -46,6 +46,10 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import {
+  getProviderSetupDescriptionKey,
+  isProviderAuthConfigured,
+} from '@/lib/utils/provider-config';
 
 const log = createLogger('Home');
 
@@ -82,9 +86,12 @@ function HomePage() {
     useDraftCache<string>({ key: 'requirementDraft' });
 
   // Model setup state
+  const currentProviderId = useSettingsStore((s) => s.providerId);
   const currentModelId = useSettingsStore((s) => s.modelId);
+  const providersConfig = useSettingsStore((s) => s.providersConfig);
   const [storeHydrated, setStoreHydrated] = useState(false);
   const [recentOpen, setRecentOpen] = useState(true);
+  const currentProviderConfig = providersConfig[currentProviderId];
 
   // Hydrate client-only state after mount (avoids SSR mismatch)
   /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
@@ -125,7 +132,9 @@ function HomePage() {
     }
   }
 
-  const needsSetup = storeHydrated && !currentModelId;
+  const needsSetup =
+    storeHydrated &&
+    (!currentModelId || !isProviderAuthConfigured(currentProviderConfig));
   const [languageOpen, setLanguageOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -232,11 +241,13 @@ function HomePage() {
 
   const handleGenerate = async () => {
     // Validate setup before proceeding
-    if (!currentModelId) {
+    if (!currentModelId || !isProviderAuthConfigured(currentProviderConfig)) {
       showSetupToast(
         <BotOff className="size-4.5 text-amber-600 dark:text-amber-400" />,
-        t('settings.modelNotConfigured'),
-        t('settings.setupNeeded'),
+        currentModelId ? t('settings.setupNeeded') : t('settings.modelNotConfigured'),
+        currentModelId
+          ? t(getProviderSetupDescriptionKey(currentProviderConfig))
+          : t('settings.setupNeeded'),
       );
       setSettingsOpen(true);
       return;
