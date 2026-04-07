@@ -346,7 +346,9 @@ export function ModelEditDialog({
                 variant="outline"
                 size="sm"
                 onClick={handleTestModel}
-                disabled={!editingModel.model.id || testStatus === 'testing'}
+                disabled={
+                  !editingModel.model.id || testStatus === 'testing' || !authConfigured
+                }
                 className={cn(
                   testStatus === 'success' && 'border-green-600 text-green-600 hover:bg-green-50',
                   testStatus === 'error' && 'border-red-600 text-red-600 hover:bg-red-50',

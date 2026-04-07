@@ -1,26 +1,13 @@
-import { defaultLocale } from './types';
+import i18n from './config';
+
 export { type Locale, defaultLocale } from './types';
-import { commonZhCN, commonEnUS } from './common';
-import { stageZhCN, stageEnUS } from './stage';
-import { chatZhCN, chatEnUS } from './chat';
-import { generationZhCN, generationEnUS } from './generation';
-import { settingsZhCN, settingsEnUS } from './settings';
+export { type LocaleEntry, supportedLocales } from './locales';
+export type TranslationKey = string;
 
-export const translations = {
-  'zh-CN': {
-    ...commonZhCN,
-    ...stageZhCN,
-    ...chatZhCN,
-    ...generationZhCN,
-    ...settingsZhCN,
-  },
-  'en-US': {
-    ...commonEnUS,
-    ...stageEnUS,
-    ...chatEnUS,
-    ...generationEnUS,
-    ...settingsEnUS,
-  },
-} as const;
+export function translate(locale: string, key: string): string {
+  return i18n.t(key, { lng: locale });
+}
 
-export type TranslationKey = keyof (typeof translations)[typeof defaultLocale];
+export function getClientTranslation(key: string): string {
+  return i18n.t(key);
+}

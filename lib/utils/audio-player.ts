@@ -16,37 +16,40 @@ const log = createLogger('AudioPlayer');
  */
 export class AudioPlayer {
   private audio: HTMLAudioElement | null = null;
-  private speechUtterance: SpeechSynthesisUtterance | null = null;
-  private canceledUtterances = new WeakSet<SpeechSynthesisUtterance>();
   private onEndedCallback: (() => void) | null = null;
   private muted: boolean = false;
   private volume: number = 1;
   private playbackRate: number = 1;
-  private browserSpeechEnabled: boolean = false;
 
   /**
-   * Enable browser-native speech synthesis fallback when no generated audio exists.
-   */
-  public setBrowserSpeechEnabled(enabled: boolean): void {
-    this.browserSpeechEnabled = enabled;
-    if (!enabled) this.stopBrowserSpeech();
-  }
-
-  /**
-   * Play audio (from IndexedDB pre-generated cache)
+   * Play audio (from URL or IndexedDB pre-generated cache)
    * @param audioId Audio ID
+   * @param audioUrl Optional server-generated audio URL (takes priority over IndexedDB)
    * @returns true if audio started playing, false if no audio (TTS disabled or not generated)
    */
-  public async play(audioId: string, options?: { fallbackText?: string }): Promise<boolean> {
+  public async play(audioId: string, audioUrl?: string): Promise<boolean> {
     try {
-      // Get audio from database
-      const audioRecord = audioId ? await db.audioFiles.get(audioId) : undefined;
+      // 1. Try audioUrl first (server-generated TTS)
+      if (audioUrl) {
+        this.stop();
+        this.audio = new Audio();
+        this.audio.src = audioUrl;
+        if (this.muted) this.audio.volume = 0;
+        else this.audio.volume = this.volume;
+        this.audio.defaultPlaybackRate = this.playbackRate;
+        this.audio.playbackRate = this.playbackRate;
+        this.audio.addEventListener('ended', () => {
+          this.onEndedCallback?.();
+        });
+        await this.audio.play();
+        this.audio.playbackRate = this.playbackRate;
+        return true;
+      }
+
+      // 2. Fall back to IndexedDB (client-generated TTS)
+      const audioRecord = await db.audioFiles.get(audioId);
 
       if (!audioRecord) {
-        if (options?.fallbackText && this.browserSpeechEnabled) {
-          return this.speakWithBrowser(options.fallbackText);
-        }
-
         // Pre-generated audio does not exist (generation failed), skip silently
         return false;
       }
@@ -84,76 +87,12 @@ export class AudioPlayer {
     }
   }
 
-  private speakWithBrowser(text: string): boolean {
-    if (
-      typeof window === 'undefined' ||
-      !('speechSynthesis' in window) ||
-      !('SpeechSynthesisUtterance' in window)
-    ) {
-      return false;
-    }
-
-    this.stop();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = this.inferLanguage(text);
-    utterance.rate = this.playbackRate;
-    utterance.volume = this.muted ? 0 : this.volume;
-
-    utterance.onend = () => {
-      if (this.speechUtterance === utterance) {
-        this.speechUtterance = null;
-      }
-      if (!this.canceledUtterances.has(utterance)) {
-        this.onEndedCallback?.();
-      }
-    };
-
-    utterance.onerror = (event) => {
-      if (this.speechUtterance === utterance) {
-        this.speechUtterance = null;
-      }
-      if (!this.canceledUtterances.has(utterance)) {
-        log.error('Browser speech synthesis failed:', event.error);
-        this.onEndedCallback?.();
-      }
-    };
-
-    this.speechUtterance = utterance;
-    window.speechSynthesis.speak(utterance);
-    return true;
-  }
-
-  private inferLanguage(text: string): string {
-    const cjkCount = (
-      text.match(/[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || []
-    ).length;
-    return cjkCount > text.length * 0.3 ? 'zh-CN' : 'en-US';
-  }
-
-  private stopBrowserSpeech(): void {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window && this.speechUtterance) {
-      this.canceledUtterances.add(this.speechUtterance);
-      window.speechSynthesis.cancel();
-      this.speechUtterance = null;
-    }
-  }
-
   /**
    * Pause playback
    */
   public pause(): void {
     if (this.audio && !this.audio.paused) {
       this.audio.pause();
-    }
-    if (
-      this.speechUtterance &&
-      typeof window !== 'undefined' &&
-      'speechSynthesis' in window &&
-      window.speechSynthesis.speaking &&
-      !window.speechSynthesis.paused
-    ) {
-      window.speechSynthesis.pause();
     }
   }
 
@@ -166,7 +105,6 @@ export class AudioPlayer {
       this.audio.currentTime = 0;
       this.audio = null;
     }
-    this.stopBrowserSpeech();
     // Note: onEndedCallback intentionally NOT cleared here because play()
     // calls stop() internally — clearing would break the callback chain.
     // Stale callbacks are harmless: engine mode check prevents processNext().
@@ -181,15 +119,6 @@ export class AudioPlayer {
       this.audio.play().catch((error) => {
         log.error('Failed to resume audio:', error);
       });
-      return;
-    }
-    if (
-      this.speechUtterance &&
-      typeof window !== 'undefined' &&
-      'speechSynthesis' in window &&
-      window.speechSynthesis.paused
-    ) {
-      window.speechSynthesis.resume();
     }
   }
 
@@ -197,11 +126,7 @@ export class AudioPlayer {
    * Get current playback status (actively playing, not paused)
    */
   public isPlaying(): boolean {
-    if (this.audio !== null && !this.audio.paused) return true;
-    if (this.speechUtterance && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      return window.speechSynthesis.speaking && !window.speechSynthesis.paused;
-    }
-    return false;
+    return this.audio !== null && !this.audio.paused;
   }
 
   /**
@@ -209,7 +134,7 @@ export class AudioPlayer {
    * Used to decide whether to resume playback or skip to the next line
    */
   public hasActiveAudio(): boolean {
-    return this.audio !== null || this.speechUtterance !== null;
+    return this.audio !== null;
   }
 
   /**
@@ -241,9 +166,6 @@ export class AudioPlayer {
     if (this.audio) {
       this.audio.volume = muted ? 0 : this.volume;
     }
-    if (this.speechUtterance) {
-      this.speechUtterance.volume = muted ? 0 : this.volume;
-    }
   }
 
   /**
@@ -254,9 +176,6 @@ export class AudioPlayer {
     if (this.audio && !this.muted) {
       this.audio.volume = this.volume;
     }
-    if (this.speechUtterance && !this.muted) {
-      this.speechUtterance.volume = this.volume;
-    }
   }
 
   /**
@@ -266,9 +185,6 @@ export class AudioPlayer {
     this.playbackRate = Math.max(0.5, Math.min(2, rate));
     if (this.audio) {
       this.audio.playbackRate = this.playbackRate;
-    }
-    if (this.speechUtterance) {
-      this.speechUtterance.rate = this.playbackRate;
     }
   }
 

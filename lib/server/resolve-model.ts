@@ -15,6 +15,8 @@ import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
   modelString: string;
+  /** Effective API key after server-side fallback resolution */
+  apiKey: string;
 }
 
 /**
@@ -62,7 +64,7 @@ export async function resolveModel(params: {
     requiresApiKey: params.requiresApiKey,
   });
 
-  return { model, modelInfo, modelString };
+  return { model, modelInfo, modelString, apiKey: credential.token };
 }
 
 /**
@@ -71,11 +73,14 @@ export async function resolveModel(params: {
  * Reads: x-model, x-api-key, x-base-url, x-provider-type, x-requires-api-key
  */
 export function resolveModelFromHeaders(req: NextRequest): Promise<ResolvedModel> {
+  const requiresApiKeyHeader = req.headers.get('x-requires-api-key');
+
   return resolveModel({
     modelString: req.headers.get('x-model') || undefined,
     apiKey: req.headers.get('x-api-key') || undefined,
     baseUrl: req.headers.get('x-base-url') || undefined,
     providerType: req.headers.get('x-provider-type') || undefined,
-    requiresApiKey: req.headers.get('x-requires-api-key') === 'true' ? true : undefined,
+    requiresApiKey:
+      requiresApiKeyHeader === null ? undefined : requiresApiKeyHeader === 'true',
   });
 }

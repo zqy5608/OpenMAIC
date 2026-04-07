@@ -6,8 +6,11 @@ import { callLLM } from '@/lib/ai/llm';
 const log = createLogger('Verify Model');
 
 export async function POST(req: NextRequest) {
+  let model: string | undefined;
   try {
-    const { apiKey, baseUrl, model, providerType, requiresApiKey } = await req.json();
+    const body = await req.json();
+    const { apiKey, baseUrl, providerType, requiresApiKey } = body;
+    model = body.model;
 
     if (!model) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Model name is required');
@@ -54,7 +57,7 @@ export async function POST(req: NextRequest) {
       url?: unknown;
     };
 
-    log.error('API test error:', {
+    log.error(`Model verification failed [model="${model ?? 'unknown'}"]:`, {
       message: error instanceof Error ? error.message : String(error),
       requestBodyValues: apiErrorDetails.requestBodyValues,
       responseBody: apiErrorDetails.responseBody,
