@@ -30,8 +30,11 @@ import {
   Wrench,
   FileText,
   Send,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useOpenAIOAuth } from '@/lib/hooks/use-openai-oauth';
 import type { ProviderConfig } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { formatContextWindow } from './utils';
@@ -67,6 +70,7 @@ export function ProviderConfigPanel({
   isBuiltIn,
 }: ProviderConfigPanelProps) {
   const { t } = useI18n();
+  const oauth = useOpenAIOAuth();
 
   // Local state for this provider
   const [apiKey, setApiKey] = useState(initialApiKey);
@@ -161,6 +165,37 @@ export function ProviderConfigPanel({
         </div>
       )}
 
+      {/* OpenAI OAuth Sign In */}
+      {provider.id === 'openai' && oauth.enabled && (
+        <div className="space-y-2">
+          <Label>{t('settings.oauthSignIn') || 'ChatGPT Sign In'}</Label>
+          {oauth.isConnected ? (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>{t('settings.oauthConnected') || 'Connected via ChatGPT'}</span>
+              </div>
+              <Button variant="outline" size="sm" onClick={oauth.logout} className="gap-1.5">
+                <LogOut className="h-3.5 w-3.5" />
+                {t('settings.oauthDisconnect') || 'Disconnect'}
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" onClick={oauth.login} className="gap-2" disabled={oauth.isLoading}>
+              {oauth.isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogIn className="h-4 w-4" />
+              )}
+              {t('settings.oauthLoginButton') || 'Sign in with ChatGPT'}
+            </Button>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {t('settings.oauthOrApiKey') || 'Or enter an API key below'}
+          </p>
+        </div>
+      )}
+
       {/* API Key */}
       <div className="space-y-2">
         <Label>{t('settings.apiSecret')}</Label>
@@ -189,7 +224,8 @@ export function ProviderConfigPanel({
             size="sm"
             onClick={handleTestApi}
             disabled={
-              testStatus === 'testing' || (requiresApiKey && !apiKey && !isServerConfigured)
+              testStatus === 'testing' ||
+              (requiresApiKey && !apiKey && !isServerConfigured && !oauth.isConnected)
             }
             className="gap-1.5"
           >

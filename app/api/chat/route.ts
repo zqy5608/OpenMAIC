@@ -15,7 +15,8 @@
 import { NextRequest } from 'next/server';
 import { statelessGenerate } from '@/lib/orchestration/stateless-generate';
 import { getModel, parseModelString } from '@/lib/ai/providers';
-import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
+import { resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
+import { resolveEffectiveApiKey } from '@/lib/server/resolve-credentials';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { apiError } from '@/lib/server/api-response';
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     const effectiveApiKey = clientBaseUrl
       ? body.apiKey || ''
-      : resolveApiKey(providerId, body.apiKey);
+      : resolveEffectiveApiKey(req, providerId, body.apiKey);
     const effectiveBaseUrl = clientBaseUrl
       ? clientBaseUrl
       : resolveBaseUrl(providerId, body.baseUrl);

@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
         baseUrl: baseUrl || undefined,
         providerType,
         requiresApiKey,
+        req,
       });
       languageModel = result.model;
     } catch (error) {

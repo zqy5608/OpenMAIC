@@ -524,6 +524,12 @@ export const settingsZhCN = {
     serverConfiguredNotice:
       '管理员已在服务端配置了此提供方的 API Key，可直接使用。也可输入自己的 Key 覆盖。',
     optionalOverride: '可选，留空则使用服务端配置',
+    // OAuth
+    oauthSignIn: 'ChatGPT 登录',
+    oauthConnected: '已通过 ChatGPT 登录',
+    oauthDisconnect: '断开连接',
+    oauthLoginButton: '使用 ChatGPT 登录',
+    oauthOrApiKey: '或在下方输入 API Key',
     // Access code
     setupNeeded: '请先完成配置',
     modelNotConfigured: '请选择一个模型以开始使用',
@@ -1112,6 +1118,12 @@ export const settingsEnUS = {
     serverConfiguredNotice:
       'Admin has configured an API key for this provider on the server. You can use it directly or enter your own key to override.',
     optionalOverride: 'Optional — leave empty to use server config',
+    // OAuth
+    oauthSignIn: 'ChatGPT Sign In',
+    oauthConnected: 'Connected via ChatGPT',
+    oauthDisconnect: 'Disconnect',
+    oauthLoginButton: 'Sign in with ChatGPT',
+    oauthOrApiKey: 'Or enter an API key below',
     // Access code
     setupNeeded: 'Setup required',
     modelNotConfigured: 'Please select a model to get started',

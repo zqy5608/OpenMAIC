@@ -8,6 +8,7 @@
 import type { NextRequest } from 'next/server';
 import { getModel, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
+import { resolveEffectiveApiKey } from '@/lib/server/resolve-credentials';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 export interface ResolvedModel extends ModelWithInfo {
@@ -26,6 +27,7 @@ export function resolveModel(params: {
   baseUrl?: string;
   providerType?: string;
   requiresApiKey?: boolean;
+  req?: NextRequest;
 }): ResolvedModel {
   const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-4o-mini';
   const { providerId, modelId } = parseModelString(modelString);
@@ -40,7 +42,9 @@ export function resolveModel(params: {
 
   const apiKey = clientBaseUrl
     ? params.apiKey || ''
-    : resolveApiKey(providerId, params.apiKey || '');
+    : params.req
+      ? resolveEffectiveApiKey(params.req, providerId, params.apiKey || '')
+      : resolveApiKey(providerId, params.apiKey || '');
   const baseUrl = clientBaseUrl ? clientBaseUrl : resolveBaseUrl(providerId, params.baseUrl);
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({
@@ -68,5 +72,6 @@ export function resolveModelFromHeaders(req: NextRequest): ResolvedModel {
     baseUrl: req.headers.get('x-base-url') || undefined,
     providerType: req.headers.get('x-provider-type') || undefined,
     requiresApiKey: req.headers.get('x-requires-api-key') === 'true' ? true : undefined,
+    req,
   });
 }

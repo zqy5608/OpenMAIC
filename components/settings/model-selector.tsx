@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useOAuthStatusStore } from '@/lib/store/oauth-status';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { formatContextWindow } from './utils';
@@ -142,7 +143,14 @@ export function ModelSelector({
       // Only send user-entered baseUrl; let server resolve fallback
       const baseUrl = providerConfig.baseUrl;
 
-      if (providerConfig.requiresApiKey && !apiKey && !providerConfig.isServerConfigured) {
+      const isOAuthConnected =
+        pid === 'openai' && useOAuthStatusStore.getState().isConnected;
+      if (
+        providerConfig.requiresApiKey &&
+        !apiKey &&
+        !providerConfig.isServerConfigured &&
+        !isOAuthConnected
+      ) {
         setTestStatus('error');
         setTestMessage(t('settings.apiKeyRequired'));
         setTestingModelId(mid);

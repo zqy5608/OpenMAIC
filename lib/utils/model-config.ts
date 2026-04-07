@@ -1,4 +1,5 @@
 import { useSettingsStore } from '@/lib/store/settings';
+import { useOAuthStatusStore } from '@/lib/store/oauth-status';
 
 /**
  * Get current model configuration from settings store
@@ -10,6 +11,10 @@ export function getCurrentModelConfig() {
   // Get current provider's config
   const providerConfig = providersConfig[providerId];
 
+  // Check OAuth connection for OpenAI
+  const isOAuthConnected =
+    providerId === 'openai' ? useOAuthStatusStore.getState().isConnected : false;
+
   return {
     providerId,
     modelId,
@@ -19,5 +24,6 @@ export function getCurrentModelConfig() {
     providerType: providerConfig?.type,
     requiresApiKey: providerConfig?.requiresApiKey,
     isServerConfigured: providerConfig?.isServerConfigured,
+    isOAuthConnected,
   };
 }

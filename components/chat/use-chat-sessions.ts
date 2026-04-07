@@ -882,7 +882,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         toast.error(t('settings.modelNotConfigured'));
         return;
       }
-      if (modelConfig.requiresApiKey && !modelConfig.apiKey && !modelConfig.isServerConfigured) {
+      if (modelConfig.requiresApiKey && !modelConfig.apiKey && !modelConfig.isServerConfigured && !modelConfig.isOAuthConnected) {
         toast.error(t('settings.setupNeeded'), {
           description: t('settings.apiKeyDesc'),
         });
@@ -1073,7 +1073,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         toast.error(t('settings.modelNotConfigured'));
         return;
       }
-      if (modelConfig.requiresApiKey && !modelConfig.apiKey && !modelConfig.isServerConfigured) {
+      if (modelConfig.requiresApiKey && !modelConfig.apiKey && !modelConfig.isServerConfigured && !modelConfig.isOAuthConnected) {
         toast.error(t('settings.setupNeeded'), {
           description: t('settings.apiKeyDesc'),
         });
