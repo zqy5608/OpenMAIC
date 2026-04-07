@@ -83,6 +83,7 @@ export class PlaybackEngine {
   private browserTTSPaused: boolean = false;
   private browserTTSCurrentCharIndex: number = 0;
   private speechTimerRemaining: number = 0; // remaining ms (set on pause)
+  private playbackRunId: number = 0; // invalidates stale async audio/timer callbacks
 
   constructor(
     scenes: Scene[],
@@ -128,6 +129,8 @@ export class PlaybackEngine {
       return;
     }
 
+    this.playbackRunId++;
+    this.cancelActivePlayback(true);
     this.sceneIndex = 0;
     this.actionIndex = 0;
     this.setMode('playing');
@@ -140,8 +143,35 @@ export class PlaybackEngine {
       log.warn('Cannot continue: not idle, current mode:', this.mode);
       return;
     }
+    this.playbackRunId++;
+    this.cancelActivePlayback(true);
     this.setMode('playing');
     this.processNext();
+  }
+
+  /** Jump to an action in the current scene and optionally start playback there. */
+  seekToAction(actionIndex: number, options: { autoplay?: boolean } = {}): void {
+    const scene = this.scenes[0];
+    if (!scene) return;
+
+    const maxActionIndex = scene.actions?.length ?? 0;
+    const targetActionIndex = Math.max(0, Math.min(actionIndex, maxActionIndex));
+
+    // Set idle before stopping audio so stale ended callbacks cannot advance the cursor.
+    this.playbackRunId++;
+    this.setMode('idle');
+    this.cancelActivePlayback(true);
+    this.sceneIndex = 0;
+    this.actionIndex = targetActionIndex;
+    this.savedSceneIndex = null;
+    this.savedActionIndex = null;
+    this.currentTopicState = null;
+    this.callbacks.onProgress?.(this.getSnapshot());
+
+    if (options.autoplay ?? true) {
+      this.setMode('playing');
+      this.processNext();
+    }
   }
 
   /** playing → paused | live → paused (abort SSE, truncate, topic pending) */
@@ -208,7 +238,7 @@ export class PlaybackEngine {
             this.browserTTSChunks = resumeChunks;
             this.browserTTSChunkIndex = 0;
             this.browserTTSCurrentCharIndex = 0;
-            this.playBrowserTTSChunk();
+            this.playBrowserTTSChunk(this.playbackRunId);
           } else {
             this.callbacks.onSpeechEnd?.();
             this.processNext();
@@ -237,25 +267,14 @@ export class PlaybackEngine {
   stop(): void {
     // Set mode BEFORE stopping audio to prevent spurious processNext from
     // synchronous onend callbacks (see handleUserInterrupt for details).
+    this.playbackRunId++;
     this.setMode('idle');
-    this.audioPlayer.stop();
-    this.cancelBrowserTTS();
-    this.actionEngine.clearEffects();
-    if (this.triggerDelayTimer) {
-      clearTimeout(this.triggerDelayTimer);
-      this.triggerDelayTimer = null;
-    }
-    if (this.speechTimer) {
-      clearTimeout(this.speechTimer);
-      this.speechTimer = null;
-    }
-    this.speechTimerRemaining = 0;
+    this.cancelActivePlayback(true);
     this.sceneIndex = 0;
     this.actionIndex = 0;
     this.savedSceneIndex = null;
     this.savedActionIndex = null;
     this.currentTopicState = null;
-    this.currentTrigger = null;
   }
 
   /** User clicks "Join" on ProactiveCard → save cursor → live */
@@ -362,10 +381,10 @@ export class PlaybackEngine {
     // onend callback synchronously, and the processNext guard checks
     // `this.mode === 'playing'`.  Setting mode first prevents a spurious
     // processNext that would advance actionIndex past the interrupted speech.
+    this.playbackRunId++;
     this.currentTopicState = 'active';
     this.setMode('live');
-    this.audioPlayer.stop();
-    this.cancelBrowserTTS();
+    this.cancelActivePlayback(true);
     this.callbacks.onUserInterrupt?.(text);
   }
 
@@ -407,6 +426,25 @@ export class PlaybackEngine {
     this.savedActionIndex = null;
   }
 
+  private cancelActivePlayback(notifyProactiveHide = false): void {
+    this.audioPlayer.stop();
+    this.cancelBrowserTTS();
+    this.actionEngine.clearEffects();
+    if (this.triggerDelayTimer) {
+      clearTimeout(this.triggerDelayTimer);
+      this.triggerDelayTimer = null;
+    }
+    if (this.speechTimer) {
+      clearTimeout(this.speechTimer);
+      this.speechTimer = null;
+    }
+    this.speechTimerRemaining = 0;
+    this.currentTrigger = null;
+    if (notifyProactiveHide) {
+      this.callbacks.onProactiveHide?.();
+    }
+  }
+
   /**
    * Get the current action, or null if playback is complete.
    * Advances sceneIndex automatically when a scene's actions are exhausted.
@@ -432,6 +470,7 @@ export class PlaybackEngine {
    */
   private async processNext(): Promise<void> {
     if (this.mode !== 'playing') return;
+    const runId = this.playbackRunId;
 
     // Check for scene boundary (fire scene change callback at start of each new scene)
     if (this.actionIndex === 0 && this.sceneIndex < this.scenes.length) {
@@ -451,6 +490,7 @@ export class PlaybackEngine {
     }
 
     const { action } = current;
+    const currentActionIndex = this.actionIndex;
 
     // Notify progress BEFORE advancing the cursor so the snapshot points at
     // the current action.  On restore the same action will be replayed — this
@@ -462,10 +502,11 @@ export class PlaybackEngine {
     switch (action.type) {
       case 'speech': {
         const speechAction = action as SpeechAction;
-        this.callbacks.onSpeechStart?.(speechAction.text);
+        this.callbacks.onSpeechStart?.(speechAction.text, currentActionIndex);
 
         // onEnded → processNext; if paused, resume() will call processNext
         this.audioPlayer.onEnded(() => {
+          if (runId !== this.playbackRunId) return;
           this.callbacks.onSpeechEnd?.();
           if (this.mode === 'playing') {
             this.processNext();
@@ -477,6 +518,7 @@ export class PlaybackEngine {
         // Non-CJK text: ~240ms/word (≈250 WPM).
         // Min 2s. Cancelled on pause; resume() calls processNext directly.
         const scheduleReadingTimer = () => {
+          if (runId !== this.playbackRunId) return;
           const text = speechAction.text;
           const cjkCount = (
             text.match(/[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || []
@@ -487,9 +529,11 @@ export class PlaybackEngine {
             ? Math.max(2000, text.length * 150)
             : Math.max(2000, text.split(/\s+/).filter(Boolean).length * 240);
           const readingMs = rawMs / speed;
-          this.speechTimerStart = Date.now();
           this.speechTimerRemaining = readingMs;
+          if (this.mode !== 'playing') return;
+          this.speechTimerStart = Date.now();
           this.speechTimer = setTimeout(() => {
+            if (runId !== this.playbackRunId) return;
             this.speechTimer = null;
             this.speechTimerRemaining = 0;
             this.callbacks.onSpeechEnd?.();
@@ -500,22 +544,31 @@ export class PlaybackEngine {
         this.audioPlayer
           .play(speechAction.audioId || '', speechAction.audioUrl)
           .then((audioStarted) => {
+            if (runId !== this.playbackRunId) return;
+            if (audioStarted) {
+              if (this.mode === 'paused') {
+                this.audioPlayer.pause();
+              }
+              return;
+            }
             if (!audioStarted) {
               // No pre-generated audio — try browser-native TTS if selected
               const settings = useSettingsStore.getState();
               if (
                 settings.ttsEnabled &&
                 settings.ttsProviderId === 'browser-native-tts' &&
+                this.mode === 'playing' &&
                 typeof window !== 'undefined' &&
                 window.speechSynthesis
               ) {
-                this.playBrowserTTS(speechAction);
+                this.playBrowserTTS(speechAction, runId);
               } else {
                 scheduleReadingTimer();
               }
             }
           })
           .catch((err) => {
+            if (runId !== this.playbackRunId) return;
             log.error('TTS error:', err);
             scheduleReadingTimer();
           });
@@ -526,17 +579,22 @@ export class PlaybackEngine {
       case 'laser': {
         // Fire-and-forget visual effects via ActionEngine
         this.actionEngine.execute(action);
-        this.callbacks.onEffectFire?.({
-          kind: action.type,
-          targetId: action.elementId,
-          ...(action.type === 'spotlight'
-            ? { dimOpacity: action.dimOpacity }
-            : { color: action.color }),
-        } as Effect);
+        this.callbacks.onEffectFire?.(
+          {
+            kind: action.type,
+            targetId: action.elementId,
+            ...(action.type === 'spotlight'
+              ? { dimOpacity: action.dimOpacity }
+              : { color: action.color }),
+          } as Effect,
+          currentActionIndex,
+        );
         // Don't block — continue immediately (use queueMicrotask to avoid
         // stack overflow from deep synchronous recursion when many consecutive
         // spotlight/laser actions appear in sequence)
-        queueMicrotask(() => this.processNext());
+        queueMicrotask(() => {
+          if (runId === this.playbackRunId) this.processNext();
+        });
         break;
       }
 
@@ -567,6 +625,7 @@ export class PlaybackEngine {
         };
 
         this.triggerDelayTimer = setTimeout(() => {
+          if (runId !== this.playbackRunId) return;
           this.triggerDelayTimer = null;
           if (this.mode !== 'playing') return; // Cancelled if user paused/stopped
           this.currentTrigger = trigger;
@@ -588,6 +647,7 @@ export class PlaybackEngine {
       case 'wb_close': {
         // Synchronous whiteboard actions — await completion, then continue
         await this.actionEngine.execute(action);
+        if (runId !== this.playbackRunId) return;
         if (this.mode === 'playing') {
           this.processNext();
         }
@@ -596,7 +656,7 @@ export class PlaybackEngine {
 
       default:
         // Unknown action, skip
-        this.processNext();
+        if (runId === this.playbackRunId) this.processNext();
         break;
     }
   }
@@ -623,13 +683,13 @@ export class PlaybackEngine {
    * Splits text into sentence-level chunks to avoid Chrome's ~15s cutoff.
    * Pauses with speechSynthesis.pause() so resume keeps the current offset.
    */
-  private playBrowserTTS(speechAction: SpeechAction): void {
+  private playBrowserTTS(speechAction: SpeechAction, runId: number): void {
     this.browserTTSChunks = this.splitIntoChunks(speechAction.text);
     this.browserTTSChunkIndex = 0;
     this.browserTTSPaused = false;
     this.browserTTSCurrentCharIndex = 0;
     this.browserTTSActive = true;
-    this.playBrowserTTSChunk();
+    this.playBrowserTTSChunk(runId);
   }
 
   private getBrowserTTSResumeChunks(): string[] {
@@ -642,7 +702,9 @@ export class PlaybackEngine {
   }
 
   /** Speak the current chunk; on completion, advance to next or finish. */
-  private async playBrowserTTSChunk(): Promise<void> {
+  private async playBrowserTTSChunk(runId: number): Promise<void> {
+    if (runId !== this.playbackRunId) return;
+
     if (this.browserTTSChunkIndex >= this.browserTTSChunks.length) {
       // All chunks done
       this.browserTTSActive = false;
@@ -666,6 +728,7 @@ export class PlaybackEngine {
 
     // Ensure voices are loaded (Chrome loads them asynchronously)
     const voices = await this.ensureVoicesLoaded();
+    if (runId !== this.playbackRunId || this.mode !== 'playing') return;
 
     // Set voice: try user's configured voice, fall back to auto-detect language
     let voiceFound = false;
@@ -688,10 +751,11 @@ export class PlaybackEngine {
     }
 
     utterance.onend = () => {
+      if (runId !== this.playbackRunId) return;
       this.browserTTSChunkIndex++;
       this.browserTTSCurrentCharIndex = 0;
       if (this.mode === 'playing') {
-        this.playBrowserTTSChunk(); // next chunk
+        this.playBrowserTTSChunk(runId); // next chunk
       }
     };
 
@@ -702,11 +766,12 @@ export class PlaybackEngine {
     utterance.onerror = (event) => {
       // 'canceled' is expected when stop is called — not a real error
       if (event.error !== 'canceled') {
+        if (runId !== this.playbackRunId) return;
         log.warn('Browser TTS chunk error:', event.error);
         // Skip failed chunk, try next
         this.browserTTSChunkIndex++;
         if (this.mode === 'playing') {
-          this.playBrowserTTSChunk();
+          this.playBrowserTTSChunk(runId);
         }
       }
       // On 'canceled': do nothing

@@ -33,6 +33,16 @@ import {
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
 
+type LectureSeekTarget = {
+  sceneId: string;
+  actionIndex: number;
+};
+
+type PendingSceneNavigation = {
+  sceneId: string;
+  actionIndex?: number;
+};
+
 /**
  * Stage Component
  *
@@ -66,6 +76,7 @@ export function Stage({
   const [engineMode, setEngineMode] = useState<EngineMode>('idle');
   const [playbackCompleted, setPlaybackCompleted] = useState(false); // Distinguishes "never played" idle from "finished" idle
   const [lectureSpeech, setLectureSpeech] = useState<string | null>(null); // From PlaybackEngine (lecture)
+  const [currentActionIndex, setCurrentActionIndex] = useState<number | null>(null);
   const [liveSpeech, setLiveSpeech] = useState<string | null>(null); // From buffer (discussion/QA)
   const [speechProgress, setSpeechProgress] = useState<number | null>(null); // StreamBuffer reveal progress (0–1)
   const [discussionTrigger, setDiscussionTrigger] = useState<TriggerEvent | null>(null);
@@ -97,7 +108,8 @@ export function Stage({
   const [activeBubbleId, setActiveBubbleId] = useState<string | null>(null);
 
   // Scene switch confirmation dialog state
-  const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
+  const [pendingSceneNavigation, setPendingSceneNavigation] =
+    useState<PendingSceneNavigation | null>(null);
   const [isPresenting, setIsPresenting] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
@@ -159,7 +171,7 @@ export function Stage({
   const audioPlayerRef = useRef(createAudioPlayer());
   const chatAreaRef = useRef<ChatAreaRef>(null);
   const lectureSessionIdRef = useRef<string | null>(null);
-  const lectureActionCounterRef = useRef(0);
+  const pendingLectureSeekRef = useRef<LectureSeekTarget | null>(null);
   const discussionAbortRef = useRef<AbortController | null>(null);
   const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -208,6 +220,7 @@ export function Stage({
     resetLiveState();
     setPlaybackCompleted(false);
     setLectureSpeech(null);
+    setCurrentActionIndex(null);
     setSpeechProgress(null);
     setShowEndFlash(false);
     setActiveBubbleId(null);
@@ -393,17 +406,16 @@ export function Stage({
       onSceneChange: (_sceneId) => {
         // Scene change handled by engine
       },
-      onSpeechStart: (text) => {
+      onSpeechStart: (text, actionIndex) => {
         setLectureSpeech(text);
-        // Add to lecture session with incrementing index for dedup
+        // Add to lecture session with the source action index for dedup
         // Chat area pacing is handled by the StreamBuffer (onTextReveal)
         if (lectureSessionIdRef.current) {
-          const idx = lectureActionCounterRef.current++;
           const speechId = `speech-${Date.now()}`;
           chatAreaRef.current?.addLectureMessage(
             lectureSessionIdRef.current,
             { id: speechId, type: 'speech', text } as Action,
-            idx,
+            actionIndex,
           );
           // Track active bubble for highlight (Issue 8)
           const msgId = chatAreaRef.current?.getLectureMessageId(lectureSessionIdRef.current!);
@@ -416,13 +428,12 @@ export function Stage({
         // Clearing here causes fallback to idleText (first sentence).
         setActiveBubbleId(null);
       },
-      onEffectFire: (effect: Effect) => {
-        // Add to lecture session with incrementing index
+      onEffectFire: (effect: Effect, actionIndex) => {
+        // Add to lecture session with the source action index
         if (
           lectureSessionIdRef.current &&
           (effect.kind === 'spotlight' || effect.kind === 'laser')
         ) {
-          const idx = lectureActionCounterRef.current++;
           chatAreaRef.current?.addLectureMessage(
             lectureSessionIdRef.current,
             {
@@ -430,7 +441,7 @@ export function Stage({
               type: effect.kind,
               elementId: effect.targetId,
             } as Action,
-            idx,
+            actionIndex,
           );
         }
       },
@@ -481,11 +492,15 @@ export function Stage({
         return ids.includes(agentId);
       },
       getPlaybackSpeed: () => useSettingsStore.getState().playbackSpeed || 1,
+      onProgress: (snapshot) => {
+        setCurrentActionIndex(snapshot.actionIndex);
+      },
       onComplete: () => {
         // lectureSpeech intentionally NOT cleared — last sentence stays visible
         // until scene transition (auto-play) or user restarts. Scene change
         // effect handles the reset.
         setPlaybackCompleted(true);
+        setCurrentActionIndex(null);
 
         // End lecture session on playback complete
         if (lectureSessionIdRef.current) {
@@ -532,14 +547,28 @@ export function Stage({
 
     engineRef.current = engine;
 
-    // Auto-start if triggered by auto-play scene advance
-    if (autoStartRef.current) {
+    const pendingSeek = pendingLectureSeekRef.current;
+
+    if (pendingSeek?.sceneId === currentScene.id) {
+      pendingLectureSeekRef.current = null;
+      autoStartRef.current = false;
+      (async () => {
+        if (chatAreaRef.current) {
+          const sessionId = await chatAreaRef.current.startLecture(currentScene.id);
+          lectureSessionIdRef.current = sessionId;
+        }
+        setPlaybackCompleted(false);
+        setLectureSpeech(null);
+        setCurrentActionIndex(null);
+        engine.seekToAction(pendingSeek.actionIndex, { autoplay: true });
+      })();
+      // Auto-start if triggered by auto-play scene advance
+    } else if (autoStartRef.current) {
       autoStartRef.current = false;
       (async () => {
         if (currentScene && chatAreaRef.current) {
           const sessionId = await chatAreaRef.current.startLecture(currentScene.id);
           lectureSessionIdRef.current = sessionId;
-          lectureActionCounterRef.current = 0;
         }
         engine.start();
       })();
@@ -667,7 +696,7 @@ export function Stage({
     (targetSceneId: string): boolean => {
       if (targetSceneId === currentSceneId) return false;
       if (isTopicActive) {
-        setPendingSceneId(targetSceneId);
+        setPendingSceneNavigation({ sceneId: targetSceneId });
         return false;
       }
       setCurrentSceneId(targetSceneId);
@@ -676,18 +705,69 @@ export function Stage({
     [currentSceneId, isTopicActive, setCurrentSceneId],
   );
 
+  const seekLecture = useCallback(
+    async ({ sceneId, actionIndex }: LectureSeekTarget) => {
+      const targetScene = scenes.find((scene) => scene.id === sceneId);
+      if (!targetScene?.actions?.[actionIndex]) return;
+
+      resetLiveState();
+      setPlaybackCompleted(false);
+      setLectureSpeech(null);
+      setCurrentActionIndex(null);
+      setSpeechProgress(null);
+      setDiscussionTrigger(null);
+      setActiveBubbleId(null);
+      setShowEndFlash(false);
+
+      if (sceneId !== currentSceneId) {
+        pendingLectureSeekRef.current = { sceneId, actionIndex };
+        autoStartRef.current = false;
+        setCurrentSceneId(sceneId);
+        return;
+      }
+
+      const engine = engineRef.current;
+      if (!engine) return;
+
+      if (chatAreaRef.current) {
+        const sessionId = await chatAreaRef.current.startLecture(sceneId);
+        lectureSessionIdRef.current = sessionId;
+      }
+      engine.seekToAction(actionIndex, { autoplay: true });
+    },
+    [currentSceneId, resetLiveState, scenes, setCurrentSceneId],
+  );
+
+  const handleLectureSeek = useCallback(
+    (sceneId: string, actionIndex: number) => {
+      if (isTopicActive) {
+        setPendingSceneNavigation({ sceneId, actionIndex });
+        return;
+      }
+      void seekLecture({ sceneId, actionIndex });
+    },
+    [isTopicActive, seekLecture],
+  );
+
   /** User confirmed scene switch via AlertDialog */
   const confirmSceneSwitch = useCallback(() => {
-    if (!pendingSceneId) return;
+    if (!pendingSceneNavigation) return;
     chatAreaRef.current?.endActiveSession();
     doSessionCleanup();
-    setCurrentSceneId(pendingSceneId);
-    setPendingSceneId(null);
-  }, [pendingSceneId, setCurrentSceneId, doSessionCleanup]);
+    setPendingSceneNavigation(null);
+    if (pendingSceneNavigation.actionIndex !== undefined) {
+      void seekLecture({
+        sceneId: pendingSceneNavigation.sceneId,
+        actionIndex: pendingSceneNavigation.actionIndex,
+      });
+    } else {
+      setCurrentSceneId(pendingSceneNavigation.sceneId);
+    }
+  }, [pendingSceneNavigation, setCurrentSceneId, doSessionCleanup, seekLecture]);
 
   /** User cancelled scene switch via AlertDialog */
   const cancelSceneSwitch = useCallback(() => {
-    setPendingSceneId(null);
+    setPendingSceneNavigation(null);
   }, []);
 
   // play/pause toggle
@@ -718,7 +798,6 @@ export function Stage({
       }
       if (wasCompleted) {
         // Restart from beginning (user clicked restart after completion)
-        lectureActionCounterRef.current = 0;
         engine.start();
       } else {
         // Continue from current position (e.g. after discussion end)
@@ -1110,7 +1189,7 @@ export function Stage({
                 setIsDiscussionPaused(false);
               }}
               totalActions={totalActions}
-              currentActionIndex={0}
+              currentActionIndex={currentActionIndex ?? 0}
               currentSceneIndex={currentSceneIndex}
               scenesCount={totalScenesCount}
               whiteboardOpen={whiteboardOpen}
@@ -1141,6 +1220,8 @@ export function Stage({
         activeBubbleId={activeBubbleId}
         onActiveBubble={(id) => setActiveBubbleId(id)}
         currentSceneId={currentSceneId}
+        currentActionIndex={currentActionIndex}
+        onLectureSeek={handleLectureSeek}
         onLiveSpeech={(text, agentId) => {
           // Capture epoch at call time — discard if scene has changed since
           const epoch = sceneEpochRef.current;
@@ -1188,7 +1269,7 @@ export function Stage({
 
       {/* Scene switch confirmation dialog */}
       <AlertDialog
-        open={!!pendingSceneId}
+        open={!!pendingSceneNavigation}
         onOpenChange={(open) => {
           if (!open) cancelSceneSwitch();
         }}

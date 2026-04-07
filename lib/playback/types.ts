@@ -29,11 +29,11 @@ export interface TriggerEvent {
 export interface PlaybackEngineCallbacks {
   onModeChange?: (mode: EngineMode) => void;
   onSceneChange?: (sceneId: string) => void;
-  onSpeechStart?: (text: string) => void;
+  onSpeechStart?: (text: string, actionIndex: number) => void;
   onSpeechEnd?: () => void;
   onTextDelta?: (content: string) => void;
   onSpeakerChange?: (role: string) => void;
-  onEffectFire?: (effect: Effect) => void;
+  onEffectFire?: (effect: Effect, actionIndex: number) => void;
 
   // Proactive discussion
   onProactiveShow?: (trigger: TriggerEvent) => void;

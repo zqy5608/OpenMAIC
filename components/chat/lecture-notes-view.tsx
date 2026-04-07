@@ -27,9 +27,16 @@ const ACTION_ICON_ONLY: Record<string, { Icon: typeof Flashlight; style: string 
 interface LectureNotesViewProps {
   notes: LectureNoteEntry[];
   currentSceneId?: string | null;
+  currentActionIndex?: number | null;
+  onSeek?: (sceneId: string, actionIndex: number) => void;
 }
 
-export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProps) {
+export function LectureNotesView({
+  notes,
+  currentSceneId,
+  currentActionIndex,
+  onSeek,
+}: LectureNotesViewProps) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -118,12 +125,18 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
               {(() => {
                 // Build render rows: group inline actions (spotlight/laser) with next speech,
                 // but render discussion as its own block
+                type InlineAction = string;
                 type Row =
-                  | { kind: 'speech'; inlineActions: string[]; text: string }
-                  | { kind: 'discussion'; label?: string }
-                  | { kind: 'trailing'; inlineActions: string[] };
+                  | {
+                      kind: 'speech';
+                      inlineActions: InlineAction[];
+                      text: string;
+                      actionIndex: number;
+                    }
+                  | { kind: 'discussion'; label?: string; actionIndex: number }
+                  | { kind: 'trailing'; inlineActions: InlineAction[] };
                 const rows: Row[] = [];
-                let pendingInline: string[] = [];
+                let pendingInline: InlineAction[] = [];
                 for (const item of note.items) {
                   if (item.kind === 'action' && item.type === 'discussion') {
                     // Flush pending inline actions as trailing if any
@@ -134,7 +147,11 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                       });
                       pendingInline = [];
                     }
-                    rows.push({ kind: 'discussion', label: item.label });
+                    rows.push({
+                      kind: 'discussion',
+                      label: item.label,
+                      actionIndex: item.actionIndex,
+                    });
                   } else if (item.kind === 'action') {
                     pendingInline.push(item.type);
                   } else {
@@ -142,6 +159,7 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                       kind: 'speech',
                       inlineActions: pendingInline,
                       text: item.text,
+                      actionIndex: item.actionIndex,
                     });
                     pendingInline = [];
                   }
@@ -151,24 +169,33 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                 }
                 return rows.map((row, i) => {
                   if (row.kind === 'discussion') {
+                    const isActiveAction = isCurrent && row.actionIndex === currentActionIndex;
                     return (
-                      <div
+                      <button
                         key={i}
-                        className="my-1.5 flex items-start gap-1.5 rounded-md border border-amber-200/60 dark:border-amber-700/30 bg-amber-50/60 dark:bg-amber-900/10 px-2 py-1.5"
+                        type="button"
+                        disabled={!onSeek}
+                        onClick={() => onSeek?.(note.sceneId, row.actionIndex)}
+                        className={cn(
+                          'my-1.5 flex w-full items-start gap-1.5 rounded-md border border-amber-200/60 dark:border-amber-700/30 bg-amber-50/60 dark:bg-amber-900/10 px-2 py-1.5 text-left transition-colors',
+                          onSeek &&
+                            'cursor-pointer hover:border-amber-300 dark:hover:border-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60',
+                          isActiveAction &&
+                            'border-amber-400/80 bg-amber-100/80 dark:border-amber-500/50 dark:bg-amber-900/20',
+                        )}
                       >
                         <MessageSquare className="w-3 h-3 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
                         <span className="text-[11px] leading-snug text-amber-800 dark:text-amber-300">
                           {row.label}
                         </span>
-                      </div>
+                      </button>
                     );
                   }
-                  const actions = row.kind === 'trailing' ? row.inlineActions : row.inlineActions;
-                  return (
-                    <p
-                      key={i}
-                      className="text-[12px] leading-[1.8] text-gray-700 dark:text-gray-300"
-                    >
+                  const actions = row.inlineActions;
+                  const isActiveAction =
+                    row.kind === 'speech' && isCurrent && row.actionIndex === currentActionIndex;
+                  const content = (
+                    <>
                       {actions.map((a, j) => {
                         const cfg = ACTION_ICON_ONLY[a];
                         if (!cfg) return null;
@@ -186,6 +213,35 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                         );
                       })}
                       {row.kind === 'speech' ? row.text : null}
+                    </>
+                  );
+
+                  if (row.kind === 'speech') {
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        disabled={!onSeek}
+                        onClick={() => onSeek?.(note.sceneId, row.actionIndex)}
+                        className={cn(
+                          'block w-full rounded-md px-1 text-left text-[12px] leading-[1.8] text-gray-700 dark:text-gray-300 transition-colors',
+                          onSeek &&
+                            'cursor-pointer hover:bg-purple-50 hover:text-purple-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/60 dark:hover:bg-purple-950/30 dark:hover:text-purple-200',
+                          isActiveAction &&
+                            'bg-purple-100/70 text-purple-700 dark:bg-purple-900/30 dark:text-purple-200',
+                        )}
+                      >
+                        {content}
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <p
+                      key={i}
+                      className="text-[12px] leading-[1.8] text-gray-700 dark:text-gray-300"
+                    >
+                      {content}
                     </p>
                   );
                 });

@@ -38,6 +38,8 @@ interface ChatAreaProps {
   /** When provided and returns true, StreamBuffer holds on the current text item after reveal. */
   shouldHoldAfterReveal?: () => { holding: boolean; segmentDone: number } | boolean;
   currentSceneId?: string | null;
+  currentActionIndex?: number | null;
+  onLectureSeek?: (sceneId: string, actionIndex: number) => void;
 }
 
 export interface ChatAreaRef {
@@ -84,6 +86,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onSegmentSealed,
       shouldHoldAfterReveal,
       currentSceneId,
+      currentActionIndex,
+      onLectureSeek,
     },
     ref,
   ) => {
@@ -138,25 +142,29 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
             sceneTitle: scene.title,
             sceneOrder: scene.order,
             items: scene
-              .actions!.filter(
-                (a) =>
-                  a.type === 'speech' ||
-                  a.type === 'spotlight' ||
-                  a.type === 'laser' ||
-                  a.type === 'play_video' ||
-                  a.type === 'discussion',
+              .actions!.map((action, actionIndex) => ({ action, actionIndex }))
+              .filter(
+                ({ action }) =>
+                  action.type === 'speech' ||
+                  action.type === 'spotlight' ||
+                  action.type === 'laser' ||
+                  action.type === 'play_video' ||
+                  action.type === 'discussion',
               )
-              .map((a) => {
-                if (a.type === 'speech') {
+              .map(({ action, actionIndex }) => {
+                if (action.type === 'speech') {
                   return {
                     kind: 'speech' as const,
-                    text: (a as SpeechAction).text,
+                    text: (action as SpeechAction).text,
+                    actionIndex,
                   };
                 }
                 return {
                   kind: 'action' as const,
-                  type: a.type,
-                  label: a.type === 'discussion' ? (a as DiscussionAction).topic : undefined,
+                  type: action.type,
+                  label:
+                    action.type === 'discussion' ? (action as DiscussionAction).topic : undefined,
+                  actionIndex,
                 };
               }),
             completedAt: scene.updatedAt || scene.createdAt || 0,
@@ -300,7 +308,12 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
             {/* Notes Tab */}
             <TabsContent value="lecture" className="flex-1 overflow-hidden flex flex-col">
-              <LectureNotesView notes={lectureNotes} currentSceneId={currentSceneId} />
+              <LectureNotesView
+                notes={lectureNotes}
+                currentSceneId={currentSceneId}
+                currentActionIndex={currentActionIndex}
+                onSeek={onLectureSeek}
+              />
             </TabsContent>
 
             {/* Chat Tab */}
