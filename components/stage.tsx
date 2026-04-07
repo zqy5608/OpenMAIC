@@ -22,16 +22,19 @@ import { cn } from '@/lib/utils';
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
 import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import type { RegenerateSceneResult } from '@/lib/hooks/use-scene-generator';
 import {
   AlertDialog,
   AlertDialogContent,
   AlertDialogTitle,
+  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
+import { toast } from 'sonner';
 
 type LectureSeekTarget = {
   sceneId: string;
@@ -52,8 +55,10 @@ type PendingSceneNavigation = {
  */
 export function Stage({
   onRetryOutline,
+  onRegenerateScene,
 }: {
   onRetryOutline?: (outlineId: string) => Promise<void>;
+  onRegenerateScene?: (sceneId: string) => Promise<RegenerateSceneResult>;
 }) {
   const { t } = useI18n();
   const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
@@ -110,6 +115,8 @@ export function Stage({
   // Scene switch confirmation dialog state
   const [pendingSceneNavigation, setPendingSceneNavigation] =
     useState<PendingSceneNavigation | null>(null);
+  const [pendingRegenerateSceneId, setPendingRegenerateSceneId] = useState<string | null>(null);
+  const [regeneratingSceneId, setRegeneratingSceneId] = useState<string | null>(null);
   const [isPresenting, setIsPresenting] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
@@ -845,6 +852,56 @@ export function Stage({
   // get action information
   const totalActions = currentScene?.actions?.length || 0;
 
+  const isRegenerateSceneDisabled =
+    !currentScene ||
+    !onRegenerateScene ||
+    isPendingScene ||
+    !!regeneratingSceneId ||
+    isTopicActive ||
+    engineMode === 'playing' ||
+    engineMode === 'live' ||
+    chatIsStreaming ||
+    !!chatSessionType ||
+    whiteboardOpen;
+
+  const requestRegenerateScene = useCallback(() => {
+    if (!currentScene || isRegenerateSceneDisabled) return;
+    setPendingRegenerateSceneId(currentScene.id);
+  }, [currentScene, isRegenerateSceneDisabled]);
+
+  const cancelRegenerateScene = useCallback(() => {
+    setPendingRegenerateSceneId(null);
+  }, []);
+
+  const confirmRegenerateScene = useCallback(async () => {
+    if (!pendingRegenerateSceneId || !onRegenerateScene) return;
+
+    const sceneId = pendingRegenerateSceneId;
+    setPendingRegenerateSceneId(null);
+    setRegeneratingSceneId(sceneId);
+
+    chatAreaRef.current?.endActiveSession();
+    discussionTTS.cleanup();
+    engineRef.current?.stop();
+    audioPlayerRef.current.stop();
+    resetSceneState();
+
+    try {
+      const result = await onRegenerateScene(sceneId);
+      if (!result.success) {
+        console.warn('Scene regeneration failed:', result.error);
+        toast.error(t('generation.regenerateSceneFailed'));
+        return;
+      }
+      toast.success(t('generation.regenerateSceneComplete'));
+    } catch (error) {
+      console.warn('Scene regeneration failed:', error);
+      toast.error(t('generation.regenerateSceneFailed'));
+    } finally {
+      setRegeneratingSceneId(null);
+    }
+  }, [discussionTTS, onRegenerateScene, pendingRegenerateSceneId, resetSceneState, t]);
+
   // whiteboard toggle
   const handleWhiteboardToggle = () => {
     setWhiteboardOpen(!whiteboardOpen);
@@ -1065,6 +1122,9 @@ export function Stage({
                 ? () => onRetryOutline(generatingOutlines[0].id)
                 : undefined
             }
+            onRegenerateScene={onRegenerateScene ? requestRegenerateScene : undefined}
+            isRegeneratingScene={regeneratingSceneId === currentScene?.id}
+            regenerateSceneDisabled={isRegenerateSceneDisabled}
           />
         </div>
 
@@ -1203,6 +1263,9 @@ export function Stage({
               isPresenting={isPresenting}
               controlsVisible={controlsVisible}
               onTogglePresentation={togglePresentation}
+              onRegenerateScene={onRegenerateScene ? requestRegenerateScene : undefined}
+              isRegeneratingScene={regeneratingSceneId === currentScene?.id}
+              regenerateSceneDisabled={isRegenerateSceneDisabled}
               onPresentationInteractionChange={setIsPresentationInteractionActive}
               fullscreenContainerRef={stageRef}
             />
@@ -1308,6 +1371,45 @@ export function Stage({
               className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-0 shadow-md shadow-amber-200/50 dark:shadow-amber-900/30"
             >
               {t('common.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Scene regeneration confirmation dialog */}
+      <AlertDialog
+        open={!!pendingRegenerateSceneId}
+        onOpenChange={(open) => {
+          if (!open) cancelRegenerateScene();
+        }}
+      >
+        <AlertDialogContent
+          container={isPresenting ? stageRef.current : undefined}
+          className="max-w-sm rounded-2xl p-0 overflow-hidden border-0 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)]"
+        >
+          <div className="h-1 bg-violet-500" />
+
+          <div className="px-6 pt-5 pb-2 flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-full bg-violet-50 dark:bg-violet-900/20 flex items-center justify-center mb-4 ring-1 ring-violet-200/50 dark:ring-violet-700/30">
+              <AlertTriangle className="w-6 h-6 text-violet-500 dark:text-violet-400" />
+            </div>
+            <AlertDialogTitle className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1.5">
+              {t('generation.regenerateSceneConfirmTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+              {t('generation.regenerateSceneConfirmMessage')}
+            </AlertDialogDescription>
+          </div>
+
+          <AlertDialogFooter className="px-6 pb-5 pt-3 flex-row gap-3">
+            <AlertDialogCancel onClick={cancelRegenerateScene} className="flex-1 rounded-xl">
+              {t('common.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRegenerateScene}
+              className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-700 text-white border-0 shadow-md shadow-violet-200/50 dark:shadow-violet-900/30"
+            >
+              {t('generation.regenerateScene')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

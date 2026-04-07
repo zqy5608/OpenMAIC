@@ -87,6 +87,9 @@ interface RoundtableProps {
   readonly isPresenting?: boolean;
   readonly controlsVisible?: boolean;
   readonly onTogglePresentation?: () => void;
+  readonly onRegenerateScene?: () => void;
+  readonly isRegeneratingScene?: boolean;
+  readonly regenerateSceneDisabled?: boolean;
   readonly onPresentationInteractionChange?: (active: boolean) => void;
   /** Ref to the fullscreen container — passed to ProactiveCard so its portal
    *  renders inside the top-layer during presentation mode. */
@@ -172,6 +175,9 @@ export function Roundtable({
   isPresenting,
   controlsVisible,
   onTogglePresentation,
+  onRegenerateScene,
+  isRegeneratingScene,
+  regenerateSceneDisabled,
   onPresentationInteractionChange,
   fullscreenContainerRef,
 }: RoundtableProps) {
@@ -637,6 +643,9 @@ export function Roundtable({
       onWhiteboardClose={onWhiteboardClose ?? (() => {})}
       isPresenting={isPresenting}
       onTogglePresentation={onTogglePresentation}
+      onRegenerateScene={onRegenerateScene}
+      isRegeneratingScene={isRegeneratingScene}
+      regenerateSceneDisabled={regenerateSceneDisabled}
       showStopDiscussion={showStopButton}
       onStopDiscussion={onStopDiscussion}
       ttsEnabled={ttsEnabled}

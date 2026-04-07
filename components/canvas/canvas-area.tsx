@@ -39,6 +39,9 @@ export function CanvasArea({
   onWhiteboardClose,
   isPresenting,
   onTogglePresentation,
+  onRegenerateScene,
+  isRegeneratingScene,
+  regenerateSceneDisabled,
   showStopDiscussion,
   onStopDiscussion,
   hideToolbar,
@@ -250,6 +253,9 @@ export function CanvasArea({
           onWhiteboardClose={onWhiteboardClose}
           isPresenting={isPresenting}
           onTogglePresentation={onTogglePresentation}
+          onRegenerateScene={onRegenerateScene}
+          isRegeneratingScene={isRegeneratingScene}
+          regenerateSceneDisabled={regenerateSceneDisabled}
           showStopDiscussion={showStopDiscussion}
           onStopDiscussion={onStopDiscussion}
         />

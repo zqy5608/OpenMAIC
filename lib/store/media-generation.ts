@@ -48,6 +48,7 @@ interface MediaGenerationState {
 
   // Retry support
   markPendingForRetry: (elementId: string) => void;
+  removeTasks: (stageId: string, elementIds: string[]) => void;
 
   // Queries
   getTask: (elementId: string) => MediaTask | undefined;
@@ -151,6 +152,20 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
           },
         },
       };
+    }),
+
+  removeTasks: (stageId, elementIds) =>
+    set((s) => {
+      const toRemove = new Set(elementIds);
+      const tasks = { ...s.tasks };
+      for (const elementId of toRemove) {
+        const task = tasks[elementId];
+        if (!task || task.stageId !== stageId) continue;
+        if (task.objectUrl) URL.revokeObjectURL(task.objectUrl);
+        if (task.poster) URL.revokeObjectURL(task.poster);
+        delete tasks[elementId];
+      }
+      return { tasks };
     }),
 
   getTask: (elementId) => get().tasks[elementId],

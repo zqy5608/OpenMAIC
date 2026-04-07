@@ -4,10 +4,11 @@ import { useCallback, useRef } from 'react';
 import { useStageStore } from '@/lib/store/stage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
+import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { db } from '@/lib/utils/database';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
-import type { Scene } from '@/lib/types/stage';
+import type { Scene, Stage } from '@/lib/types/stage';
 import type { DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
@@ -241,19 +242,102 @@ export interface GenerationParams {
   userProfile?: string;
 }
 
+interface StoredGenerationParams {
+  stageId: string;
+  params: GenerationParams;
+}
+
+export interface RegenerateSceneResult {
+  success: boolean;
+  error?: string;
+}
+
+function getStageInfo(stage: Stage): GenerationParams['stageInfo'] {
+  return {
+    name: stage.name || '',
+    description: stage.description,
+    language: stage.language,
+    style: stage.style,
+  };
+}
+
+function getSelectedAgents(): AgentInfo[] | undefined {
+  const settings = useSettingsStore.getState();
+  const registry = useAgentRegistry.getState();
+  const agents = settings.selectedAgentIds
+    .map((id) => registry.getAgent(id))
+    .filter(Boolean)
+    .map((agent) => ({
+      id: agent!.id,
+      name: agent!.name,
+      role: agent!.role,
+      persona: agent!.persona,
+    }));
+
+  return agents.length > 0 ? agents : undefined;
+}
+
+function createFallbackOutline(scene: Scene, stage: Stage): SceneOutline {
+  const language =
+    stage.language === 'zh-CN' || stage.language === 'en-US' ? stage.language : undefined;
+
+  return {
+    id: scene.id,
+    type: scene.type,
+    title: scene.title,
+    description: stage.description || scene.title,
+    keyPoints: [],
+    order: scene.order,
+    language,
+  };
+}
+
+function getOutlinesForScenes(
+  outlines: SceneOutline[],
+  scenes: Scene[],
+  stage: Stage,
+): SceneOutline[] {
+  if (outlines.length > 0) return outlines;
+  return [...scenes]
+    .sort((a, b) => a.order - b.order)
+    .map((scene) => createFallbackOutline(scene, stage));
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
   const abortRef = useRef(false);
   const generatingRef = useRef(false);
   const mediaAbortRef = useRef<AbortController | null>(null);
   const fetchAbortRef = useRef<AbortController | null>(null);
-  const lastParamsRef = useRef<GenerationParams | null>(null);
+  const lastParamsRef = useRef<StoredGenerationParams | null>(null);
   const generateRemainingRef = useRef<((params: GenerationParams) => Promise<void>) | null>(null);
 
   const store = useStageStore;
 
+  const getGenerationParamsForStage = useCallback((stage: Stage): GenerationParams => {
+    const fallback: GenerationParams = {
+      stageInfo: getStageInfo(stage),
+      agents: getSelectedAgents(),
+    };
+    const stored = lastParamsRef.current;
+    if (!stored || stored.stageId !== stage.id) return fallback;
+
+    return {
+      ...fallback,
+      ...stored.params,
+      stageInfo: {
+        ...fallback.stageInfo,
+        ...stored.params.stageInfo,
+      },
+      agents: stored.params.agents ?? fallback.agents,
+    };
+  }, []);
+
   const generateRemaining = useCallback(
     async (params: GenerationParams) => {
-      lastParamsRef.current = params;
       if (generatingRef.current) return;
       generatingRef.current = true;
       abortRef.current = false;
@@ -274,6 +358,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         generatingRef.current = false;
         return;
       }
+      lastParamsRef.current = { stageId: stage.id, params };
 
       store.getState().setGenerationStatus('generating');
 
@@ -448,13 +533,23 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
   const isGenerating = useCallback(() => generatingRef.current, []);
 
+  const waitForIdle = useCallback(async (timeoutMs = 5000): Promise<boolean> => {
+    const startedAt = Date.now();
+    while (generatingRef.current) {
+      if (Date.now() - startedAt > timeoutMs) return false;
+      await wait(50);
+    }
+    return true;
+  }, []);
+
   /** Retry a single failed outline from scratch (content → actions → TTS). */
   const retrySingleOutline = useCallback(
     async (outlineId: string) => {
       const state = store.getState();
       const outline = state.failedOutlines.find((o) => o.id === outlineId);
-      const params = lastParamsRef.current;
-      if (!outline || !state.stage || !params) return;
+      if (!outline || !state.stage) return;
+      const params = getGenerationParamsForStage(state.stage);
+      const allOutlines = getOutlinesForScenes(state.outlines, state.scenes, state.stage);
 
       const removeGeneratingOutline = () => {
         const current = store.getState().generatingOutlines;
@@ -478,7 +573,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         const contentResult = await fetchSceneContent(
           {
             outline,
-            allOutlines: state.outlines,
+            allOutlines,
             stageId: state.stage.id,
             pdfImages: params.pdfImages,
             imageMapping: params.imageMapping,
@@ -507,7 +602,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         const actionsResult = await fetchSceneActions(
           {
             outline: contentResult.effectiveOutline || outline,
-            allOutlines: state.outlines,
+            allOutlines,
             content: contentResult.content,
             stageId: state.stage.id,
             agents: params.agents,
@@ -537,8 +632,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         store.getState().addScene(actionsResult.scene);
 
         // Resume remaining generation if there are pending outlines
-        if (store.getState().generatingOutlines.length > 0 && lastParamsRef.current) {
-          generateRemainingRef.current?.(lastParamsRef.current);
+        const latestStage = store.getState().stage;
+        if (store.getState().generatingOutlines.length > 0 && latestStage) {
+          generateRemainingRef.current?.(getGenerationParamsForStage(latestStage));
         }
       } catch (err) {
         if (!(err instanceof DOMException && err.name === 'AbortError')) {
@@ -546,8 +642,137 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
       }
     },
-    [store],
+    [getGenerationParamsForStage, store],
   );
 
-  return { generateRemaining, retrySingleOutline, stop, isGenerating };
+  const regenerateScene = useCallback(
+    async (sceneId: string): Promise<RegenerateSceneResult> => {
+      if (generatingRef.current) {
+        abortRef.current = true;
+        store.getState().bumpGenerationEpoch();
+        fetchAbortRef.current?.abort();
+        mediaAbortRef.current?.abort();
+        store.getState().setGenerationStatus('paused');
+
+        const idle = await waitForIdle();
+        if (!idle) {
+          return { success: false, error: 'Timed out waiting for background generation to pause' };
+        }
+      }
+
+      generatingRef.current = true;
+      const state = store.getState();
+      if (!state.stage) {
+        generatingRef.current = false;
+        return { success: false, error: 'Stage is not loaded' };
+      }
+
+      const scene = state.scenes.find((item) => item.id === sceneId);
+      if (!scene) {
+        generatingRef.current = false;
+        return { success: false, error: 'Scene not found' };
+      }
+
+      const allOutlines = getOutlinesForScenes(state.outlines, state.scenes, state.stage);
+      const outline =
+        allOutlines.find((item) => item.order === scene.order) ??
+        createFallbackOutline(scene, state.stage);
+      const params = getGenerationParamsForStage(state.stage);
+      const abortController = new AbortController();
+      const signal = abortController.signal;
+
+      try {
+        const contentResult = await fetchSceneContent(
+          {
+            outline,
+            allOutlines,
+            stageId: state.stage.id,
+            pdfImages: params.pdfImages,
+            imageMapping: params.imageMapping,
+            stageInfo: params.stageInfo,
+            agents: params.agents,
+          },
+          signal,
+        );
+
+        if (!contentResult.success || !contentResult.content) {
+          return { success: false, error: contentResult.error || 'Content generation failed' };
+        }
+
+        const sortedScenes = [...store.getState().scenes].sort((a, b) => a.order - b.order);
+        const previousScenes = sortedScenes.filter((item) => item.order < outline.order);
+        const lastScene = previousScenes[previousScenes.length - 1];
+        const previousSpeeches = lastScene
+          ? (lastScene.actions || [])
+              .filter((action): action is SpeechAction => action.type === 'speech')
+              .map((action) => action.text)
+          : [];
+        const previousDiscussions = collectDiscussionTopics(previousScenes);
+
+        const actionsResult = await fetchSceneActions(
+          {
+            outline: contentResult.effectiveOutline || outline,
+            allOutlines,
+            content: contentResult.content,
+            stageId: state.stage.id,
+            agents: params.agents,
+            previousSpeeches,
+            previousDiscussions,
+            userProfile: params.userProfile,
+          },
+          signal,
+        );
+
+        if (!actionsResult.success || !actionsResult.scene) {
+          return { success: false, error: actionsResult.error || 'Actions generation failed' };
+        }
+
+        const settings = useSettingsStore.getState();
+        if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
+          const ttsResult = await generateTTSForScene(actionsResult.scene, signal);
+          if (!ttsResult.success) {
+            return { success: false, error: ttsResult.error || 'TTS generation failed' };
+          }
+        }
+
+        const generatedScene = actionsResult.scene;
+        store.getState().updateScene(sceneId, {
+          type: generatedScene.type,
+          title: generatedScene.title,
+          content: generatedScene.content,
+          actions: generatedScene.actions,
+          whiteboards: generatedScene.whiteboards,
+          multiAgent: generatedScene.multiAgent,
+          updatedAt: Date.now(),
+        });
+
+        generateMediaForOutlines(
+          [contentResult.effectiveOutline || outline],
+          state.stage.id,
+          undefined,
+          {
+            force: true,
+          },
+        ).catch((err) => {
+          log.warn('Media regeneration failed:', err);
+        });
+
+        return { success: true };
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return { success: false, error: 'Regeneration was canceled' };
+        }
+        log.warn('Scene regeneration failed:', err);
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Scene regeneration failed',
+        };
+      } finally {
+        generatingRef.current = false;
+      }
+    },
+    [getGenerationParamsForStage, store, waitForIdle],
+  );
+
+  return { generateRemaining, retrySingleOutline, regenerateScene, stop, isGenerating };
 }

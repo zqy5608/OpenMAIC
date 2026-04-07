@@ -15,6 +15,10 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MediaOrchestrator');
 
+interface MediaGenerationOptions {
+  force?: boolean;
+}
+
 /** Error with a structured errorCode from the API */
 class MediaApiError extends Error {
   errorCode?: string;
@@ -32,12 +36,13 @@ export async function generateMediaForOutlines(
   outlines: SceneOutline[],
   stageId: string,
   abortSignal?: AbortSignal,
+  options: MediaGenerationOptions = {},
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   const store = useMediaGenerationStore.getState();
 
   // Collect all media requests
-  const allRequests: MediaGenerationRequest[] = [];
+  const requestMap = new Map<string, MediaGenerationRequest>();
   for (const outline of outlines) {
     if (!outline.mediaGenerations) continue;
     for (const mg of outline.mediaGenerations) {
@@ -46,12 +51,26 @@ export async function generateMediaForOutlines(
       if (mg.type === 'video' && !settings.videoGenerationEnabled) continue;
       // Skip already completed or permanently failed (restored from DB)
       const existing = store.getTask(mg.elementId);
-      if (existing?.status === 'done' || existing?.status === 'failed') continue;
-      allRequests.push(mg);
+      if (!options.force && (existing?.status === 'done' || existing?.status === 'failed')) {
+        continue;
+      }
+      requestMap.set(mg.elementId, mg);
     }
   }
 
+  const allRequests = [...requestMap.values()];
+
   if (allRequests.length === 0) return;
+
+  if (options.force) {
+    const elementIds = allRequests.map((req) => req.elementId);
+    useMediaGenerationStore.getState().removeTasks(stageId, elementIds);
+    await Promise.all(
+      elementIds.map((elementId) =>
+        db.mediaFiles.delete(mediaFileKey(stageId, elementId)).catch(() => {}),
+      ),
+    );
+  }
 
   // Enqueue all as pending
   useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);

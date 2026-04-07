@@ -13,6 +13,7 @@ import {
   Volume2,
   VolumeX,
   Repeat,
+  RefreshCw,
   Maximize2,
   Minimize2,
 } from 'lucide-react';
@@ -39,6 +40,9 @@ export interface CanvasToolbarProps {
   readonly onStopDiscussion?: () => void;
   readonly isPresenting?: boolean;
   readonly onTogglePresentation?: () => void;
+  readonly onRegenerateScene?: () => void;
+  readonly isRegeneratingScene?: boolean;
+  readonly regenerateSceneDisabled?: boolean;
   readonly className?: string;
   // Audio/playback controls
   readonly ttsEnabled?: boolean;
@@ -98,6 +102,9 @@ export function CanvasToolbar({
   onStopDiscussion,
   isPresenting,
   onTogglePresentation,
+  onRegenerateScene,
+  isRegeneratingScene,
+  regenerateSceneDisabled,
   className,
   ttsEnabled,
   ttsMuted,
@@ -138,6 +145,9 @@ export function CanvasToolbar({
   // Effective volume for display
   const effectiveVolume = ttsMuted ? 0 : ttsVolume;
   const presentationLabel = isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen');
+  const regenerateLabel = isRegeneratingScene
+    ? t('generation.regeneratingScene')
+    : t('generation.regenerateScene');
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
@@ -399,6 +409,23 @@ export function CanvasToolbar({
       {/* ── Right: fullscreen + chat toggle ── */}
       <div className="flex items-center justify-end gap-px shrink-0 pr-1">
         <CtrlDivider />
+        {onRegenerateScene && (
+          <button
+            onClick={onRegenerateScene}
+            disabled={regenerateSceneDisabled || isRegeneratingScene}
+            className={cn(
+              ctrlBtn,
+              'w-6 h-6 disabled:opacity-30 disabled:pointer-events-none',
+              isRegeneratingScene
+                ? 'text-violet-600 dark:text-violet-400'
+                : 'text-gray-500 dark:text-gray-400',
+            )}
+            aria-label={regenerateLabel}
+            title={regenerateLabel}
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', isRegeneratingScene && 'animate-spin')} />
+          </button>
+        )}
         {onTogglePresentation && (
           <button
             onClick={onTogglePresentation}
