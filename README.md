@@ -133,6 +133,23 @@ VIDEO_MINIMAX_API_KEY=...
 VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
 ```
 
+Qwen3 local TTS quick example:
+
+```bash
+conda activate qwen3-tts
+python scripts/qwen3_tts_http_service.py --model Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --host 127.0.0.1 --port 8000
+```
+
+```env
+TTS_QWEN3_LOCAL_BASE_URL=http://127.0.0.1:8000
+```
+
+If you prefer the packaged Gradio demo, disable FlashAttention unless `flash_attn` is installed:
+
+```bash
+qwen-tts-demo Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --ip 127.0.0.1 --port 8000 --no-flash-attn
+```
+
 For local models through Ollama:
 
 ```bash

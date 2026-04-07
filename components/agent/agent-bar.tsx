@@ -504,7 +504,7 @@ export function AgentBar() {
   const serverProviders = getAvailableProvidersWithVoices(ttsProvidersConfig);
   const availableProviders: ProviderWithVoices[] = [
     ...serverProviders,
-    ...(browserVoices.length > 0
+    ...(ttsProvidersConfig['browser-native-tts']?.enabled === true && browserVoices.length > 0
       ? [
           {
             providerId: 'browser-native-tts' as TTSProviderId,

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
@@ -26,6 +27,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
+  const setTTSProviderEnabled = useSettingsStore((state) => state.setTTSProviderEnabled);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
 
   // When testing a non-active provider, use that provider's default voice
@@ -37,6 +39,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   const ttsProvider = TTS_PROVIDERS[selectedProviderId] ?? TTS_PROVIDERS['openai-tts'];
   const isServerConfigured = !!ttsProvidersConfig[selectedProviderId]?.isServerConfigured;
+  const providerEnabled = ttsProvidersConfig[selectedProviderId]?.enabled === true;
+  const showApiKeyConfig = ttsProvider.requiresApiKey || isServerConfigured;
+  const showBaseUrlConfig = !!ttsProvider.defaultBaseUrl || isServerConfigured;
+  const showProviderConfig = showApiKeyConfig || showBaseUrlConfig;
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
@@ -75,7 +81,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   }, [selectedProviderId, stopPreview]);
 
   const handleTestTTS = async () => {
-    if (!testText.trim()) return;
+    if (!providerEnabled || !testText.trim()) return;
 
     setTestStatus('testing');
     setTestMessage('');
@@ -105,6 +111,24 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
+      <div
+        className={cn(
+          'flex items-center gap-3 rounded-lg border px-4 py-3',
+          providerEnabled ? 'bg-background' : 'bg-muted/30 text-muted-foreground',
+        )}
+      >
+        <div className="flex-1 min-w-0">
+          <Label className="text-sm">{t('settings.enableProvider')}</Label>
+          <p className="text-xs text-muted-foreground mt-1">
+            {t('settings.enableTTSProviderDescription')}
+          </p>
+        </div>
+        <Switch
+          checked={providerEnabled}
+          onCheckedChange={(checked) => setTTSProviderEnabled(selectedProviderId, checked)}
+        />
+      </div>
+
       {/* Server-configured notice */}
       {isServerConfigured && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">
@@ -113,10 +137,15 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       )}
 
       {/* API Key & Base URL */}
-      {(ttsProvider.requiresApiKey || isServerConfigured) && (
+      {showProviderConfig && (
         <>
-          <div className={cn('grid gap-4', isDoubao ? 'grid-cols-3' : 'grid-cols-2')}>
-            {isDoubao ? (
+          <div
+            className={cn(
+              'grid gap-4',
+              showApiKeyConfig ? (isDoubao ? 'grid-cols-3' : 'grid-cols-2') : 'grid-cols-1',
+            )}
+          >
+            {showApiKeyConfig && isDoubao ? (
               <>
                 <div className="space-y-2">
                   <Label className="text-sm">{t('settings.doubaoAppId')}</Label>
@@ -175,7 +204,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                   </div>
                 </div>
               </>
-            ) : (
+            ) : showApiKeyConfig ? (
               <div className="space-y-2">
                 <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
                 <div className="relative">
@@ -208,25 +237,27 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                   </button>
                 </div>
               </div>
+            ) : null}
+            {showBaseUrlConfig && (
+              <div className="space-y-2">
+                <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
+                <Input
+                  name={`tts-base-url-${selectedProviderId}`}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
+                  value={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
+                  onChange={(e) =>
+                    setTTSProviderConfig(selectedProviderId, {
+                      baseUrl: e.target.value,
+                    })
+                  }
+                  className="text-sm"
+                />
+              </div>
             )}
-            <div className="space-y-2">
-              <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
-              <Input
-                name={`tts-base-url-${selectedProviderId}`}
-                autoComplete="off"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
-                value={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
-                onChange={(e) =>
-                  setTTSProviderConfig(selectedProviderId, {
-                    baseUrl: e.target.value,
-                  })
-                }
-                className="text-sm"
-              />
-            </div>
           </div>
           {/* Request URL Preview */}
           {(() => {
@@ -245,6 +276,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               case 'qwen-tts':
                 endpointPath = '/services/aigc/multimodal-generation/generation';
                 break;
+              case 'qwen3-local-tts':
+                endpointPath = '';
+                break;
               case 'elevenlabs-tts':
                 endpointPath = '/text-to-speech';
                 break;
@@ -252,7 +286,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                 endpointPath = '/unidirectional';
                 break;
             }
-            if (!endpointPath) return null;
+            if (!endpointPath && selectedProviderId !== 'qwen3-local-tts') return null;
             return (
               <p className="text-xs text-muted-foreground break-all">
                 {t('settings.requestUrl')}: {effectiveBaseUrl + endpointPath}
@@ -276,6 +310,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             onClick={handleTestTTS}
             disabled={
               testingTTS ||
+              !providerEnabled ||
               !testText.trim() ||
               (ttsProvider.requiresApiKey &&
                 !ttsProvidersConfig[selectedProviderId]?.apiKey?.trim() &&

@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   X,
   Trash2,
@@ -65,50 +66,73 @@ function ProviderListColumn<T extends string>({
   configs,
   selectedId,
   onSelect,
+  getEnabled,
+  onToggleEnabled,
   width,
   t,
 }: {
   providers: Array<{ id: T; name: string; icon?: string }>;
-  configs: Record<string, { isServerConfigured?: boolean }>;
+  configs: Record<string, { isServerConfigured?: boolean; enabled?: boolean }>;
   selectedId: T;
   onSelect: (id: T) => void;
+  getEnabled?: (id: T) => boolean;
+  onToggleEnabled?: (id: T, enabled: boolean) => void;
   width: number;
   t: (key: string) => string;
 }) {
   return (
     <div className="flex-shrink-0 bg-background flex flex-col" style={{ width }}>
       <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-        {providers.map((provider) => (
-          <button
-            key={provider.id}
-            onClick={() => onSelect(provider.id)}
-            className={cn(
-              'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all border text-left',
-              selectedId === provider.id
-                ? 'bg-primary/5 border-primary/50 shadow-sm'
-                : 'border-transparent hover:bg-muted/50',
-            )}
-          >
-            {provider.icon ? (
-              <img
-                src={provider.icon}
-                alt={provider.name}
-                className="w-5 h-5 rounded"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <Box className="h-5 w-5 text-muted-foreground" />
-            )}
-            <span className="font-medium text-sm flex-1 truncate">{provider.name}</span>
-            {configs[provider.id]?.isServerConfigured && (
-              <span className="text-[10px] px-1 py-0 h-4 leading-4 rounded shrink-0 bg-muted text-muted-foreground">
-                {t('settings.serverConfigured')}
-              </span>
-            )}
-          </button>
-        ))}
+        {providers.map((provider) => {
+          const isEnabled = getEnabled?.(provider.id);
+          return (
+            <div
+              key={provider.id}
+              className={cn(
+                'w-full flex items-center gap-2 rounded-lg transition-all border',
+                selectedId === provider.id
+                  ? 'bg-primary/5 border-primary/50 shadow-sm'
+                  : 'border-transparent hover:bg-muted/50',
+                isEnabled === false && 'opacity-60',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => onSelect(provider.id)}
+                className="min-w-0 flex-1 flex items-center gap-2.5 px-3 py-2.5 text-left"
+              >
+                {provider.icon ? (
+                  <img
+                    src={provider.icon}
+                    alt={provider.name}
+                    className="w-5 h-5 rounded shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <Box className="h-5 w-5 text-muted-foreground shrink-0" />
+                )}
+                <span className="font-medium text-sm flex-1 truncate">{provider.name}</span>
+                {configs[provider.id]?.isServerConfigured && (
+                  <span className="text-[10px] px-1 py-0 h-4 leading-4 rounded shrink-0 bg-muted text-muted-foreground">
+                    {t('settings.serverConfigured')}
+                  </span>
+                )}
+              </button>
+              {onToggleEnabled && (
+                <div className="pr-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <Switch
+                    checked={isEnabled === true}
+                    onCheckedChange={(checked) => onToggleEnabled(provider.id, checked)}
+                    aria-label={`${provider.name} ${t('settings.enableProvider')}`}
+                    className="scale-75 origin-right"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -121,6 +145,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
+    'qwen3-local-tts': t('settings.providerQwen3LocalTTS'),
     'doubao-tts': t('settings.providerDoubaoTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
@@ -204,6 +229,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const setProviderConfig = useSettingsStore((state) => state.setProviderConfig);
   const setProvidersConfig = useSettingsStore((state) => state.setProvidersConfig);
   const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
+  const setTTSProviderEnabled = useSettingsStore((state) => state.setTTSProviderEnabled);
   const setASRProvider = useSettingsStore((state) => state.setASRProvider);
 
   // Navigation
@@ -216,6 +242,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     useState<ImageProviderId>(imageProviderId);
   const [selectedVideoProviderId, setSelectedVideoProviderId] =
     useState<VideoProviderId>(videoProviderId);
+  const [selectedTTSProviderId, setSelectedTTSProviderId] = useState<TTSProviderId>(ttsProviderId);
   // Navigate to initialSection when dialog opens
   useEffect(() => {
     if (open && initialSection) {
@@ -314,6 +341,18 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const handleProviderConfigSave = () => {
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 2000);
+  };
+
+  const handleTTSProviderSelect = (pid: TTSProviderId) => {
+    setSelectedTTSProviderId(pid);
+    if (ttsProvidersConfig[pid]?.enabled === true) {
+      setTTSProvider(pid);
+    }
+  };
+
+  const handleTTSProviderEnabledChange = (pid: TTSProviderId, enabled: boolean) => {
+    setSelectedTTSProviderId(pid);
+    setTTSProviderEnabled(pid, enabled);
   };
 
   const selectedProvider = providersConfig[selectedProviderId]
@@ -623,7 +662,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         );
       }
       case 'tts': {
-        const ttsIcon = TTS_PROVIDERS[ttsProviderId]?.icon;
+        const ttsIcon = TTS_PROVIDERS[selectedTTSProviderId]?.icon;
         return (
           <>
             {ttsIcon ? (
@@ -638,7 +677,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             ) : (
               <Volume2 className="h-6 w-6 text-muted-foreground" />
             )}
-            <h2 className="text-lg font-semibold">{getTTSProviderName(ttsProviderId, t)}</h2>
+            <h2 className="text-lg font-semibold">
+              {getTTSProviderName(selectedTTSProviderId, t)}
+            </h2>
           </>
         );
       }
@@ -900,8 +941,10 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                   icon: p.icon,
                 }))}
                 configs={ttsProvidersConfig}
-                selectedId={ttsProviderId}
-                onSelect={setTTSProvider}
+                selectedId={selectedTTSProviderId}
+                onSelect={handleTTSProviderSelect}
+                getEnabled={(id) => ttsProvidersConfig[id]?.enabled === true}
+                onToggleEnabled={handleTTSProviderEnabledChange}
                 width={providerListWidth}
                 t={t}
               />
@@ -997,7 +1040,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               {activeSection === 'video' && (
                 <VideoSettings selectedProviderId={selectedVideoProviderId} />
               )}
-              {activeSection === 'tts' && <TTSSettings selectedProviderId={ttsProviderId} />}
+              {activeSection === 'tts' && (
+                <TTSSettings selectedProviderId={selectedTTSProviderId} />
+              )}
               {activeSection === 'asr' && <ASRSettings selectedProviderId={asrProviderId} />}
             </div>
 

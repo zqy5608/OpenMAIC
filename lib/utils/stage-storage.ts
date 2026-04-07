@@ -11,6 +11,7 @@ import { db } from './database';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
 import { clearPlaybackState } from './playback-storage';
 import { createLogger } from '@/lib/logger';
+import { collectAudioIdsFromScenes, collectRemovedAudioIds } from '@/lib/audio/audio-cleanup';
 
 const log = createLogger('StageStorage');
 
@@ -36,6 +37,8 @@ export interface StageListItem {
 export async function saveStageData(stageId: string, data: StageStoreData): Promise<void> {
   try {
     const now = Date.now();
+    const previousScenes = await db.scenes.where('stageId').equals(stageId).toArray();
+    const removedAudioIds = collectRemovedAudioIds(previousScenes, data.scenes || []);
 
     // Save to stages table
     await db.stages.put({
@@ -69,6 +72,10 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
     // Save chat sessions to independent table
     if (data.chats) {
       await saveChatSessions(stageId, data.chats);
+    }
+
+    if (removedAudioIds.length > 0) {
+      await db.audioFiles.bulkDelete(removedAudioIds);
     }
 
     log.info(`Saved stage: ${stageId}`);
@@ -115,6 +122,9 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
  */
 export async function deleteStageData(stageId: string): Promise<void> {
   try {
+    const scenes = await db.scenes.where('stageId').equals(stageId).toArray();
+    const audioIds = collectAudioIdsFromScenes(scenes);
+
     // Delete stage
     await db.stages.delete(stageId);
 
@@ -124,6 +134,10 @@ export async function deleteStageData(stageId: string): Promise<void> {
     // Delete chat sessions and playback state
     await deleteChatSessions(stageId);
     await clearPlaybackState(stageId);
+
+    if (audioIds.length > 0) {
+      await db.audioFiles.bulkDelete(audioIds);
+    }
 
     log.info(`Deleted stage: ${stageId}`);
   } catch (error) {

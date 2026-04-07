@@ -178,6 +178,7 @@ export interface SettingsState {
 
   // Audio actions
   setTTSProvider: (providerId: TTSProviderId) => void;
+  setTTSProviderEnabled: (providerId: TTSProviderId, enabled: boolean) => void;
   setTTSVoice: (voice: string) => void;
   setTTSSpeed: (speed: number) => void;
   setASRProvider: (providerId: ASRProviderId) => void;
@@ -291,6 +292,12 @@ const getDefaultAudioConfig = () => ({
     'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
     'glm-tts': { apiKey: '', baseUrl: '', enabled: false },
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
+    'qwen3-local-tts': {
+      apiKey: '',
+      baseUrl: '',
+      modelId: 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice',
+      enabled: false,
+    },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: false },
@@ -305,6 +312,54 @@ const getDefaultAudioConfig = () => ({
     'qwen-asr': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<ASRProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
+
+type TTSProviderConfigMap = SettingsState['ttsProvidersConfig'];
+
+function isTTSProviderUsable(
+  providerId: TTSProviderId | undefined,
+  configs: Partial<TTSProviderConfigMap> | undefined,
+): providerId is TTSProviderId {
+  if (!providerId || !configs) return false;
+  const provider = TTS_PROVIDERS[providerId];
+  const config = configs[providerId];
+  if (!provider || config?.enabled !== true) return false;
+  if (provider.requiresApiKey === false) return true;
+  return config.isServerConfigured === true || (config.apiKey?.trim().length ?? 0) > 0;
+}
+
+function findUsableTTSProvider(
+  configs: Partial<TTSProviderConfigMap> | undefined,
+  excludedProviderId?: TTSProviderId,
+): TTSProviderId | undefined {
+  const providerIds = Object.keys(TTS_PROVIDERS) as TTSProviderId[];
+  return providerIds.find(
+    (providerId) => providerId !== excludedProviderId && isTTSProviderUsable(providerId, configs),
+  );
+}
+
+function recoverTTSProviderConfig(
+  configs: TTSProviderConfigMap,
+  excludedProviderId?: TTSProviderId,
+): { providerId: TTSProviderId; configs: TTSProviderConfigMap } {
+  const fallbackProviderId =
+    findUsableTTSProvider(configs, excludedProviderId) || 'browser-native-tts';
+  const fallbackConfig = configs[fallbackProviderId] || {
+    apiKey: '',
+    baseUrl: '',
+    enabled: false,
+  };
+
+  return {
+    providerId: fallbackProviderId,
+    configs: {
+      ...configs,
+      [fallbackProviderId]: {
+        ...fallbackConfig,
+        enabled: true,
+      },
+    },
+  };
+}
 
 // Initialize default PDF config
 const getDefaultPDFConfig = () => ({
@@ -388,6 +443,18 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
   if (!hasProviderId(TTS_PROVIDERS, state.ttsProviderId)) {
     state.ttsProviderId = defaultAudioConfig.ttsProviderId;
   }
+  if (
+    state.ttsProvidersConfig &&
+    !isTTSProviderUsable(state.ttsProviderId, state.ttsProvidersConfig)
+  ) {
+    const recovery = recoverTTSProviderConfig(
+      state.ttsProvidersConfig,
+      state.ttsProviderId as TTSProviderId | undefined,
+    );
+    state.ttsProvidersConfig = recovery.configs;
+    state.ttsProviderId = recovery.providerId;
+    state.ttsVoice = DEFAULT_TTS_VOICES[recovery.providerId] || 'default';
+  }
 
   if (!hasProviderId(ASR_PROVIDERS, state.asrProviderId)) {
     state.asrProviderId = defaultAudioConfig.asrProviderId;
@@ -451,6 +518,46 @@ function ensureBuiltInImageProviders(state: Partial<SettingsState>): void {
       state.imageProvidersConfig![providerId] = defaultConfig[providerId];
     }
   });
+}
+
+/**
+ * Ensure audio provider configs include all built-in TTS/ASR providers.
+ * Called on every rehydrate so newly added audio providers appear automatically.
+ */
+function ensureBuiltInAudioProviders(state: Partial<SettingsState>): void {
+  const defaultConfig = getDefaultAudioConfig();
+
+  if (state.ttsProvidersConfig) {
+    Object.keys(TTS_PROVIDERS).forEach((pid) => {
+      const providerId = pid as TTSProviderId;
+      const defaultProviderConfig = defaultConfig.ttsProvidersConfig[providerId];
+      if (!state.ttsProvidersConfig![providerId]) {
+        state.ttsProvidersConfig![providerId] = defaultProviderConfig;
+      } else {
+        state.ttsProvidersConfig![providerId] = {
+          ...defaultProviderConfig,
+          ...state.ttsProvidersConfig![providerId],
+          enabled: state.ttsProvidersConfig![providerId].enabled ?? defaultProviderConfig.enabled,
+        };
+      }
+    });
+  }
+
+  if (state.asrProvidersConfig) {
+    Object.keys(ASR_PROVIDERS).forEach((pid) => {
+      const providerId = pid as ASRProviderId;
+      const defaultProviderConfig = defaultConfig.asrProvidersConfig[providerId];
+      if (!state.asrProvidersConfig![providerId]) {
+        state.asrProvidersConfig![providerId] = defaultProviderConfig;
+      } else {
+        state.asrProvidersConfig![providerId] = {
+          ...defaultProviderConfig,
+          ...state.asrProvidersConfig![providerId],
+          enabled: state.asrProvidersConfig![providerId].enabled ?? defaultProviderConfig.enabled,
+        };
+      }
+    });
+  }
 }
 
 /**
@@ -639,12 +746,42 @@ export const useSettingsStore = create<SettingsState>()(
             return {
               ttsProviderId: providerId,
               ...(shouldUpdateVoice && { ttsVoice: DEFAULT_TTS_VOICES[providerId] }),
+              ttsProvidersConfig: {
+                ...state.ttsProvidersConfig,
+                [providerId]: {
+                  ...state.ttsProvidersConfig[providerId],
+                  enabled: true,
+                },
+              },
             };
           }),
 
         setTTSVoice: (voice) => set({ ttsVoice: voice }),
 
         setTTSSpeed: (speed) => set({ ttsSpeed: speed }),
+
+        setTTSProviderEnabled: (providerId, enabled) =>
+          set((state) => {
+            let nextConfig: TTSProviderConfigMap = {
+              ...state.ttsProvidersConfig,
+              [providerId]: {
+                ...state.ttsProvidersConfig[providerId],
+                enabled,
+              },
+            };
+
+            if (!enabled && state.ttsProviderId === providerId) {
+              const recovery = recoverTTSProviderConfig(nextConfig, providerId);
+              nextConfig = recovery.configs;
+              return {
+                ttsProviderId: recovery.providerId,
+                ttsVoice: DEFAULT_TTS_VOICES[recovery.providerId] || 'default',
+                ttsProvidersConfig: nextConfig,
+              };
+            }
+
+            return { ttsProvidersConfig: nextConfig };
+          }),
 
         // Reset language when switching providers, since language code formats differ
         // (e.g. browser-native uses BCP-47 "en-US", OpenAI Whisper uses ISO 639-1 "en")
@@ -661,15 +798,27 @@ export const useSettingsStore = create<SettingsState>()(
         setASRLanguage: (language) => set({ asrLanguage: language }),
 
         setTTSProviderConfig: (providerId, config) =>
-          set((state) => ({
-            ttsProvidersConfig: {
+          set((state) => {
+            let nextConfig: TTSProviderConfigMap = {
               ...state.ttsProvidersConfig,
               [providerId]: {
                 ...state.ttsProvidersConfig[providerId],
                 ...config,
               },
-            },
-          })),
+            };
+
+            if (config.enabled === false && state.ttsProviderId === providerId) {
+              const recovery = recoverTTSProviderConfig(nextConfig, providerId);
+              nextConfig = recovery.configs;
+              return {
+                ttsProviderId: recovery.providerId,
+                ttsVoice: DEFAULT_TTS_VOICES[recovery.providerId] || 'default',
+                ttsProvidersConfig: nextConfig,
+              };
+            }
+
+            return { ttsProvidersConfig: nextConfig };
+          }),
 
         setASRProviderConfig: (providerId, config) =>
           set((state) => ({
@@ -845,7 +994,7 @@ export const useSettingsStore = create<SettingsState>()(
               }
 
               // Merge TTS providers
-              const newTTSConfig = { ...state.ttsProvidersConfig };
+              const newTTSConfig: TTSProviderConfigMap = { ...state.ttsProvidersConfig };
               for (const pid of Object.keys(newTTSConfig)) {
                 const key = pid as TTSProviderId;
                 if (newTTSConfig[key]) {
@@ -863,6 +1012,7 @@ export const useSettingsStore = create<SettingsState>()(
                     ...newTTSConfig[key],
                     isServerConfigured: true,
                     serverBaseUrl: info.baseUrl,
+                    enabled: newTTSConfig[key].enabled || !state.autoConfigApplied,
                   };
                 }
               }
@@ -997,7 +1147,6 @@ export const useSettingsStore = create<SettingsState>()(
               ];
 
               const llmFallback = buildFallback<ProviderId>(newProvidersConfig);
-              const ttsFallback = buildFallback<TTSProviderId>(newTTSConfig);
               const asrFallback = buildFallback<ASRProviderId>(newASRConfig);
               const pdfFallback = buildFallback<PDFProviderId>(newPDFConfig);
               const imageFallback = buildFallback<ImageProviderId>(newImageConfig);
@@ -1008,12 +1157,14 @@ export const useSettingsStore = create<SettingsState>()(
                 newProvidersConfig,
                 llmFallback,
               );
-              const validTTSProvider = validateProvider(
-                state.ttsProviderId,
-                newTTSConfig,
-                ttsFallback,
-                'browser-native-tts' as TTSProviderId,
-              );
+              let validTTSProvider: TTSProviderId;
+              if (isTTSProviderUsable(state.ttsProviderId, newTTSConfig)) {
+                validTTSProvider = state.ttsProviderId;
+              } else {
+                const recovery = recoverTTSProviderConfig(newTTSConfig, state.ttsProviderId);
+                validTTSProvider = recovery.providerId;
+                Object.assign(newTTSConfig, recovery.configs);
+              }
               const validASRProvider = validateProvider(
                 state.asrProviderId,
                 newASRConfig,
@@ -1110,6 +1261,10 @@ export const useSettingsStore = create<SettingsState>()(
                 ) {
                   autoTtsProvider = serverTtsIds[0];
                   autoTtsVoice = DEFAULT_TTS_VOICES[autoTtsProvider] || 'default';
+                  newTTSConfig[autoTtsProvider] = {
+                    ...newTTSConfig[autoTtsProvider],
+                    enabled: true,
+                  };
                 }
 
                 // ASR: select first server provider if current is not server-configured
@@ -1273,6 +1428,7 @@ export const useSettingsStore = create<SettingsState>()(
         }
 
         // Ensure image/video configs have all built-in providers
+        ensureBuiltInAudioProviders(state);
         ensureBuiltInImageProviders(state);
         ensureBuiltInVideoProviders(state);
 
@@ -1403,6 +1559,7 @@ export const useSettingsStore = create<SettingsState>()(
       merge: (persistedState, currentState) => {
         const merged = { ...currentState, ...(persistedState as object) };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
+        ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);

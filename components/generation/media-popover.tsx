@@ -88,6 +88,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
+    'qwen3-local-tts': t('settings.providerQwen3LocalTTS'),
     'doubao-tts': t('settings.providerDoubaoTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
@@ -220,6 +221,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     const groups: SelectGroupData[] = [];
 
     for (const p of Object.values(TTS_PROVIDERS)) {
+      if (ttsProvidersConfig[p.id]?.enabled !== true) continue;
       if (p.requiresApiKey && !cfgOk(ttsProvidersConfig, p.id, p.requiresApiKey)) continue;
 
       const providerName = getTTSProviderName(p.id, t);

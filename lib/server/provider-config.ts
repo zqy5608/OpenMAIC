@@ -59,10 +59,13 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_AZURE: 'azure-tts',
   TTS_GLM: 'glm-tts',
   TTS_QWEN: 'qwen-tts',
+  TTS_QWEN3_LOCAL: 'qwen3-local-tts',
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
 };
+
+const KEYLESS_TTS_PROVIDERS = new Set(['qwen3-local-tts']);
 
 const ASR_ENV_MAP: Record<string, string> = {
   ASR_OPENAI: 'openai-whisper',
@@ -208,7 +211,9 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
       keylessProviderIds: KEYLESS_LLM_PROVIDERS,
     }),
-    tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts),
+    tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
+      keylessProviderIds: KEYLESS_TTS_PROVIDERS,
+    }),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr),
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
     image: loadEnvSection(IMAGE_ENV_MAP, yamlData.image),

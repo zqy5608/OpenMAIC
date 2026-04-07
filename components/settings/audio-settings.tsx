@@ -37,6 +37,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
+    'qwen3-local-tts': t('settings.providerQwen3LocalTTS'),
     'doubao-tts': t('settings.providerDoubaoTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
@@ -90,6 +91,20 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
   const setASREnabled = useSettingsStore((state) => state.setASREnabled);
 
   const ttsProvider = TTS_PROVIDERS[ttsProviderId] ?? TTS_PROVIDERS['openai-tts'];
+  const availableTTSProviders = useMemo(
+    () =>
+      Object.values(TTS_PROVIDERS).filter((provider) => {
+        const config = ttsProvidersConfig[provider.id];
+        if (config?.enabled !== true) return false;
+        if (provider.requiresApiKey === false) return true;
+        return !!config.apiKey?.trim() || config.isServerConfigured === true;
+      }),
+    [ttsProvidersConfig],
+  );
+  const showTTSApiKeyConfig =
+    ttsProvider.requiresApiKey || !!ttsProvidersConfig[ttsProviderId]?.isServerConfigured;
+  const showTTSBaseUrlConfig =
+    !!ttsProvider.defaultBaseUrl || !!ttsProvidersConfig[ttsProviderId]?.isServerConfigured;
 
   // Azure voices - load from static JSON
   const azureVoices = useMemo(() => azureVoicesData.voices, []);
@@ -432,7 +447,7 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.values(TTS_PROVIDERS).map((provider) => (
+                {availableTTSProviders.map((provider) => (
                   <SelectItem key={provider.id} value={provider.id}>
                     <div className="flex items-center gap-2">
                       {provider.icon && (
@@ -451,51 +466,60 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
             </Select>
           </div>
 
-          {(ttsProvider.requiresApiKey ||
-            ttsProvidersConfig[ttsProviderId]?.isServerConfigured) && (
+          {(showTTSApiKeyConfig || showTTSBaseUrlConfig) && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
-                  <div className="relative">
+              <div
+                className={cn('grid gap-4', showTTSApiKeyConfig ? 'grid-cols-2' : 'grid-cols-1')}
+              >
+                {showTTSApiKeyConfig && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
+                    <div className="relative">
+                      <Input
+                        type={showTTSApiKey ? 'text' : 'password'}
+                        placeholder={
+                          ttsProvidersConfig[ttsProviderId]?.isServerConfigured
+                            ? t('settings.optionalOverride')
+                            : t('settings.enterApiKey')
+                        }
+                        value={ttsProvidersConfig[ttsProviderId]?.apiKey || ''}
+                        onChange={(e) =>
+                          handleTTSProviderConfigChange(ttsProviderId, {
+                            apiKey: e.target.value,
+                          })
+                        }
+                        className="font-mono text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTTSApiKey(!showTTSApiKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showTTSApiKey ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {showTTSBaseUrlConfig && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
                     <Input
-                      type={showTTSApiKey ? 'text' : 'password'}
-                      placeholder={
-                        ttsProvidersConfig[ttsProviderId]?.isServerConfigured
-                          ? t('settings.optionalOverride')
-                          : t('settings.enterApiKey')
-                      }
-                      value={ttsProvidersConfig[ttsProviderId]?.apiKey || ''}
+                      placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
+                      value={ttsProvidersConfig[ttsProviderId]?.baseUrl || ''}
                       onChange={(e) =>
                         handleTTSProviderConfigChange(ttsProviderId, {
-                          apiKey: e.target.value,
+                          baseUrl: e.target.value,
                         })
                       }
-                      className="font-mono text-sm pr-10"
+                      className="text-sm"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowTTSApiKey(!showTTSApiKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showTTSApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
-                  <Input
-                    placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
-                    value={ttsProvidersConfig[ttsProviderId]?.baseUrl || ''}
-                    onChange={(e) =>
-                      handleTTSProviderConfigChange(ttsProviderId, {
-                        baseUrl: e.target.value,
-                      })
-                    }
-                    className="text-sm"
-                  />
-                </div>
+                )}
               </div>
             </>
           )}

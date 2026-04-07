@@ -162,6 +162,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   deleteScene: (sceneId) => {
+    const deletedScene = get().scenes.find((scene) => scene.id === sceneId);
     const scenes = get().scenes.filter((scene) => scene.id !== sceneId);
     const currentSceneId = get().currentSceneId;
 
@@ -177,6 +178,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       set({ scenes });
     }
     debouncedSave();
+
+    if (deletedScene?.actions?.length) {
+      import('@/lib/utils/audio-file-cleanup')
+        .then(({ deleteAudioFilesForActions }) => deleteAudioFilesForActions(deletedScene.actions))
+        .catch((error) => {
+          log.warn('Failed to delete audio files for deleted scene:', error);
+        });
+    }
   },
 
   setCurrentSceneId: (sceneId) => {

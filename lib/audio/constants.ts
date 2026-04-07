@@ -50,6 +50,11 @@ export const MINIMAX_TTS_MODELS = [
   { id: 'speech-02-turbo', name: 'Speech 02 Turbo' },
 ] as const;
 
+const QWEN3_LOCAL_CUSTOM_VOICE_MODELS = [
+  'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice',
+  'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
+];
+
 export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
   'openai-tts': {
     id: 'openai-tts',
@@ -635,6 +640,97 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'pcm'],
   },
 
+  'qwen3-local-tts': {
+    id: 'qwen3-local-tts',
+    name: 'Qwen3 Local TTS',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://127.0.0.1:8000',
+    icon: '/logos/qwen.svg',
+    models: [
+      {
+        id: 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice',
+        name: 'Qwen3 TTS 0.6B CustomVoice',
+      },
+      {
+        id: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
+        name: 'Qwen3 TTS 1.7B CustomVoice',
+      },
+      {
+        id: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',
+        name: 'Qwen3 TTS 1.7B VoiceDesign',
+      },
+    ],
+    defaultModelId: 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice',
+    voices: [
+      {
+        id: 'vivian',
+        name: 'Vivian',
+        language: 'zh-CN',
+        gender: 'female',
+        description: 'Default Qwen3 CustomVoice speaker',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+      {
+        id: 'serena',
+        name: 'Serena',
+        language: 'zh-CN',
+        gender: 'female',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+      {
+        id: 'uncle_fu',
+        name: 'Uncle Fu',
+        language: 'zh-CN',
+        gender: 'male',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+      {
+        id: 'ryan',
+        name: 'Ryan',
+        language: 'en-US',
+        gender: 'male',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+      {
+        id: 'aiden',
+        name: 'Aiden',
+        language: 'en-US',
+        gender: 'male',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+      {
+        id: 'ono_anna',
+        name: 'Ono Anna',
+        language: 'ja-JP',
+        gender: 'female',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+      {
+        id: 'sohee',
+        name: 'Sohee',
+        language: 'ko-KR',
+        gender: 'female',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+      {
+        id: 'eric',
+        name: 'Eric',
+        language: 'en-US',
+        gender: 'male',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+      {
+        id: 'dylan',
+        name: 'Dylan',
+        language: 'en-US',
+        gender: 'male',
+        compatibleModels: QWEN3_LOCAL_CUSTOM_VOICE_MODELS,
+      },
+    ],
+    supportedFormats: ['wav'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'minimax-tts': {
     id: 'minimax-tts',
     name: 'MiniMax TTS',
@@ -1122,6 +1218,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
+  'qwen3-local-tts': 'vivian',
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
@@ -1133,6 +1230,7 @@ export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
   'azure-tts': '',
   'glm-tts': 'glm-tts',
   'qwen-tts': 'qwen3-tts-flash',
+  'qwen3-local-tts': 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice',
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',

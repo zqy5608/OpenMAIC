@@ -505,6 +505,21 @@ describe('fetchServerProviders — TTS stale selection', () => {
 
     expect(store.getState().ttsProviderId).toBe('openai-tts');
   });
+
+  it('switches away from the active TTS provider when it is disabled', async () => {
+    const store = await getStore();
+
+    mockServerResponse({ tts: { 'openai-tts': {} } });
+    await store.getState().fetchServerProviders();
+    store.getState().setTTSProvider('openai-tts');
+    expect(store.getState().ttsProviderId).toBe('openai-tts');
+
+    store.getState().setTTSProviderEnabled('openai-tts', false);
+
+    expect(store.getState().ttsProvidersConfig['openai-tts'].enabled).toBe(false);
+    expect(store.getState().ttsProviderId).toBe('browser-native-tts');
+    expect(store.getState().ttsProvidersConfig['browser-native-tts'].enabled).toBe(true);
+  });
 });
 
 describe('fetchServerProviders — ASR stale selection', () => {

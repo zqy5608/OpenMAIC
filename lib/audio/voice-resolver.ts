@@ -20,6 +20,13 @@ export function resolveAgentVoice(
 ): ResolvedVoice {
   // Agent-specific config
   if (agent.voiceConfig) {
+    const availableProvider = availableProviders.find(
+      (provider) => provider.providerId === agent.voiceConfig?.providerId,
+    );
+    if (!availableProvider) {
+      return fallbackAgentVoice(agentIndex, availableProviders);
+    }
+
     // Browser-native voices are dynamic (not in static registry), so skip validation
     if (agent.voiceConfig.providerId === 'browser-native-tts') {
       return {
@@ -28,7 +35,7 @@ export function resolveAgentVoice(
         voiceId: agent.voiceConfig.voiceId,
       };
     }
-    const list = getServerVoiceList(agent.voiceConfig.providerId);
+    const list = availableProvider.voices.map((voice) => voice.id);
     if (list.includes(agent.voiceConfig.voiceId)) {
       return {
         providerId: agent.voiceConfig.providerId,
@@ -38,12 +45,18 @@ export function resolveAgentVoice(
     }
   }
 
-  // Fallback: first available provider, deterministic voice
+  return fallbackAgentVoice(agentIndex, availableProviders);
+}
+
+function fallbackAgentVoice(
+  agentIndex: number,
+  availableProviders: ProviderWithVoices[],
+): ResolvedVoice {
   if (availableProviders.length > 0) {
     const first = availableProviders[0];
     return {
       providerId: first.providerId,
-      voiceId: first.voices[agentIndex % first.voices.length].id,
+      voiceId: first.voices[agentIndex % first.voices.length]?.id ?? 'default',
     };
   }
 
@@ -93,10 +106,12 @@ export function getAvailableProvidersWithVoices(
     if (config.voices.length === 0) continue;
 
     const providerConfig = ttsProvidersConfig[providerId];
+    const isEnabled = providerConfig?.enabled === true;
     const hasApiKey = providerConfig?.apiKey && providerConfig.apiKey.trim().length > 0;
     const isServerConfigured = providerConfig?.isServerConfigured === true;
+    const isKeylessProvider = config.requiresApiKey === false;
 
-    if (hasApiKey || isServerConfigured) {
+    if (isEnabled && (hasApiKey || isServerConfigured || isKeylessProvider)) {
       const allVoices = config.voices.map((v) => ({ id: v.id, name: v.name }));
 
       // Build model groups
@@ -106,6 +121,7 @@ export function getAvailableProvidersWithVoices(
           const compatibleVoices = config.voices
             .filter((v) => !v.compatibleModels || v.compatibleModels.includes(model.id))
             .map((v) => ({ id: v.id, name: v.name }));
+          if (compatibleVoices.length === 0) continue;
           modelGroups.push({
             modelId: model.id,
             modelName: model.name,

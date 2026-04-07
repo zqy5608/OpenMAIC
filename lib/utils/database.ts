@@ -11,6 +11,7 @@ import type {
 import type { SceneOutline } from '@/lib/types/generation';
 import type { UIMessage } from 'ai';
 import { createLogger } from '@/lib/logger';
+import { collectAudioIdsFromScenes } from '@/lib/audio/audio-cleanup';
 
 const log = createLogger('Database');
 
@@ -400,6 +401,7 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
     [
       db.stages,
       db.scenes,
+      db.audioFiles,
       db.chatSessions,
       db.playbackState,
       db.stageOutlines,
@@ -407,8 +409,14 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
       db.generatedAgents,
     ],
     async () => {
+      const scenes = await db.scenes.where('stageId').equals(stageId).toArray();
+      const audioIds = collectAudioIdsFromScenes(scenes);
+
       await db.stages.delete(stageId);
       await db.scenes.where('stageId').equals(stageId).delete();
+      if (audioIds.length > 0) {
+        await db.audioFiles.bulkDelete(audioIds);
+      }
       await db.chatSessions.where('stageId').equals(stageId).delete();
       await db.playbackState.delete(stageId);
       await db.stageOutlines.delete(stageId);

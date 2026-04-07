@@ -9,6 +9,7 @@
  * - Azure TTS (https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech)
  * - GLM TTS (https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts)
  * - Qwen TTS (https://bailian.console.aliyun.com/)
+ * - Qwen3 Local TTS (self-hosted Gradio service)
  * - Doubao TTS (https://www.volcengine.com/docs/6561/1257543)
  * - Browser Native TTS (Web Speech API, client-side only)
  *
@@ -83,6 +84,7 @@ export type TTSProviderId =
   | 'azure-tts'
   | 'glm-tts'
   | 'qwen-tts'
+  | 'qwen3-local-tts'
   | 'doubao-tts'
   | 'elevenlabs-tts'
   | 'minimax-tts'

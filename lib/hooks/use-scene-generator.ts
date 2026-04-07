@@ -11,6 +11,8 @@ import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene, Stage } from '@/lib/types/stage';
 import type { DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { collectRemovedAudioIds } from '@/lib/audio/audio-cleanup';
+import { deleteAudioFilesByIds } from '@/lib/utils/audio-file-cleanup';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
 
@@ -736,6 +738,15 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
 
         const generatedScene = actionsResult.scene;
+        const removedAudioIds = collectRemovedAudioIds([scene], [generatedScene]);
+        if (removedAudioIds.length > 0) {
+          try {
+            await deleteAudioFilesByIds(removedAudioIds);
+          } catch (error) {
+            log.warn('Failed to delete replaced scene audio files:', error);
+          }
+        }
+
         store.getState().updateScene(sceneId, {
           type: generatedScene.type,
           title: generatedScene.title,
