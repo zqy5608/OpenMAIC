@@ -22,6 +22,7 @@ export interface SceneGenerationContext {
   totalPages: number; // Total number of pages
   allTitles: string[]; // All page titles in order
   previousSpeeches: string[]; // Speech texts from the previous page only
+  previousDiscussions?: string[]; // Discussion topics already planned in earlier pages
 }
 
 // ==================== Generated Slide Data Interface ====================

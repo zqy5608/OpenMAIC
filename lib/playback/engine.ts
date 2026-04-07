@@ -80,7 +80,8 @@ export class PlaybackEngine {
   private browserTTSActive: boolean = false;
   private browserTTSChunks: string[] = []; // sentence-level chunks for sequential playback
   private browserTTSChunkIndex: number = 0; // current chunk being spoken
-  private browserTTSPausedChunks: string[] = []; // remaining chunks saved on pause (for cancel+re-speak)
+  private browserTTSPaused: boolean = false;
+  private browserTTSCurrentCharIndex: number = 0;
   private speechTimerRemaining: number = 0; // remaining ms (set on pause)
 
   constructor(
@@ -164,12 +165,8 @@ export class PlaybackEngine {
       // Freeze TTS — but skip if waiting on ProactiveCard (no active speech)
       if (!this.currentTrigger) {
         if (this.browserTTSActive) {
-          // Cancel+re-speak pattern: save remaining chunks for resume.
-          // speechSynthesis.pause()/resume() is broken on Firefox, so we
-          // cancel now and re-speak from current chunk onward on resume.
-          this.browserTTSPausedChunks = this.browserTTSChunks.slice(this.browserTTSChunkIndex);
-          window.speechSynthesis?.cancel();
-          // Note: cancel fires onerror('canceled'), which we ignore (see playBrowserTTSChunk)
+          this.browserTTSPaused = true;
+          window.speechSynthesis?.pause();
         } else if (this.audioPlayer.isPlaying()) {
           this.audioPlayer.pause();
         }
@@ -200,13 +197,23 @@ export class PlaybackEngine {
     } else {
       // Resume lecture
       this.setMode('playing');
-      if (this.browserTTSPausedChunks.length > 0) {
-        // Browser TTS was paused via cancel — re-speak remaining chunks
-        this.browserTTSActive = true;
-        this.browserTTSChunks = this.browserTTSPausedChunks;
-        this.browserTTSChunkIndex = 0;
-        this.browserTTSPausedChunks = [];
-        this.playBrowserTTSChunk();
+      if (this.browserTTSActive && this.browserTTSPaused) {
+        this.browserTTSPaused = false;
+        const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
+        if (synth && (synth.paused || synth.speaking || synth.pending)) {
+          synth.resume();
+        } else {
+          const resumeChunks = this.getBrowserTTSResumeChunks();
+          if (resumeChunks.length > 0) {
+            this.browserTTSChunks = resumeChunks;
+            this.browserTTSChunkIndex = 0;
+            this.browserTTSCurrentCharIndex = 0;
+            this.playBrowserTTSChunk();
+          } else {
+            this.callbacks.onSpeechEnd?.();
+            this.processNext();
+          }
+        }
       } else if (this.audioPlayer.hasActiveAudio()) {
         // Audio is paused — resume it; TTS onend will call processNext
         this.audioPlayer.resume();
@@ -614,14 +621,24 @@ export class PlaybackEngine {
   /**
    * Play text using the Web Speech API (browser-native TTS).
    * Splits text into sentence-level chunks to avoid Chrome's ~15s cutoff.
-   * Uses cancel+re-speak for pause/resume (Firefox compatibility).
+   * Pauses with speechSynthesis.pause() so resume keeps the current offset.
    */
   private playBrowserTTS(speechAction: SpeechAction): void {
     this.browserTTSChunks = this.splitIntoChunks(speechAction.text);
     this.browserTTSChunkIndex = 0;
-    this.browserTTSPausedChunks = [];
+    this.browserTTSPaused = false;
+    this.browserTTSCurrentCharIndex = 0;
     this.browserTTSActive = true;
     this.playBrowserTTSChunk();
+  }
+
+  private getBrowserTTSResumeChunks(): string[] {
+    const currentChunk = this.browserTTSChunks[this.browserTTSChunkIndex] ?? '';
+    const currentRemainder = currentChunk.slice(this.browserTTSCurrentCharIndex).trimStart();
+    return [
+      ...(currentRemainder ? [currentRemainder] : []),
+      ...this.browserTTSChunks.slice(this.browserTTSChunkIndex + 1),
+    ];
   }
 
   /** Speak the current chunk; on completion, advance to next or finish. */
@@ -629,7 +646,9 @@ export class PlaybackEngine {
     if (this.browserTTSChunkIndex >= this.browserTTSChunks.length) {
       // All chunks done
       this.browserTTSActive = false;
+      this.browserTTSPaused = false;
       this.browserTTSChunks = [];
+      this.browserTTSCurrentCharIndex = 0;
       this.callbacks.onSpeechEnd?.();
       if (this.mode === 'playing') this.processNext();
       return;
@@ -638,6 +657,7 @@ export class PlaybackEngine {
     const settings = useSettingsStore.getState();
     const chunkText = this.browserTTSChunks[this.browserTTSChunkIndex];
     const utterance = new SpeechSynthesisUtterance(chunkText);
+    this.browserTTSCurrentCharIndex = 0;
 
     // Apply settings
     const speed = this.callbacks.getPlaybackSpeed?.() ?? 1;
@@ -669,13 +689,18 @@ export class PlaybackEngine {
 
     utterance.onend = () => {
       this.browserTTSChunkIndex++;
+      this.browserTTSCurrentCharIndex = 0;
       if (this.mode === 'playing') {
         this.playBrowserTTSChunk(); // next chunk
       }
     };
 
+    utterance.onboundary = (event) => {
+      this.browserTTSCurrentCharIndex = Math.max(0, Math.min(event.charIndex, chunkText.length));
+    };
+
     utterance.onerror = (event) => {
-      // 'canceled' is expected when stop/pause is called — not a real error
+      // 'canceled' is expected when stop is called — not a real error
       if (event.error !== 'canceled') {
         log.warn('Browser TTS chunk error:', event.error);
         // Skip failed chunk, try next
@@ -684,7 +709,7 @@ export class PlaybackEngine {
           this.playBrowserTTSChunk();
         }
       }
-      // On 'canceled': do nothing — pause handler already saved state
+      // On 'canceled': do nothing
     };
 
     // Chrome bug workaround: cancel() before speak() to clear stale synthesis
@@ -734,7 +759,8 @@ export class PlaybackEngine {
       this.browserTTSActive = false;
       this.browserTTSChunks = [];
       this.browserTTSChunkIndex = 0;
-      this.browserTTSPausedChunks = [];
+      this.browserTTSPaused = false;
+      this.browserTTSCurrentCharIndex = 0;
       window.speechSynthesis?.cancel();
     }
   }

@@ -46,6 +46,20 @@ export function buildCourseContext(ctx?: SceneGenerationContext): string {
     lines.push(`  "...${lastSpeech.slice(-150)}"`);
   }
 
+  lines.push('');
+  const previousDiscussions = ctx.previousDiscussions ?? [];
+  if (previousDiscussions.length > 0) {
+    lines.push('Discussion history: Earlier pages already had classmate discussions.');
+    lines.push(
+      `  Last topic: "${previousDiscussions[previousDiscussions.length - 1].slice(0, 150)}"`,
+    );
+    lines.push(
+      'Still include one fresh classmate discussion at the end of this page. Use the history only to avoid repeating the same topic.',
+    );
+  } else {
+    lines.push('Discussion history: No earlier classmate discussion has happened yet.');
+  }
+
   return lines.join('\n');
 }
 
@@ -58,6 +72,17 @@ export function formatAgentsForPrompt(agents?: AgentInfo[]): string {
     const personaPart = a.persona ? ` — ${a.persona}` : '';
     lines.push(`- id: "${a.id}", name: "${a.name}", role: ${a.role}${personaPart}`);
   }
+  const discussionAgents = agents.filter((a) => a.role !== 'teacher');
+  if (discussionAgents.length > 0) {
+    const studentIds = discussionAgents.filter((a) => a.role === 'student').map((a) => a.id);
+    const fallbackIds = discussionAgents.map((a) => a.id);
+    lines.push('');
+    lines.push(`Discussion-capable agents: ${fallbackIds.map((id) => `"${id}"`).join(', ')}`);
+    lines.push(
+      `Every page must end with one discussion action whose agentId exactly matches one of these IDs. Prefer student agents${studentIds.length > 0 ? ` (${studentIds.map((id) => `"${id}"`).join(', ')})` : ''}; otherwise use an assistant.`,
+    );
+  }
+
   return lines.join('\n');
 }
 

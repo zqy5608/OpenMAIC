@@ -24,6 +24,27 @@ interface RequestBody {
   availableAvatars: string[];
   avatarDescriptions?: Array<{ path: string; desc: string }>;
   availableVoices?: Array<{ providerId: string; voiceId: string; voiceName: string }>;
+  selectedAgents?: SelectedAgentHint[];
+}
+
+interface SelectedAgentHint {
+  id: string;
+  name: string;
+  role: string;
+  persona?: string;
+  avatar?: string;
+  color?: string;
+  voice?: string;
+}
+
+interface ParsedAgentProfile {
+  name: string;
+  role: string;
+  persona: string;
+  avatar: string;
+  color: string;
+  priority: number;
+  voice?: string;
 }
 
 function stripCodeFences(text: string): string {
@@ -33,6 +54,99 @@ function stripCodeFences(text: string): string {
     cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
   }
   return cleaned.trim();
+}
+
+function normalizeClassmateRole(role: string): 'assistant' | 'student' {
+  return role === 'assistant' ? 'assistant' : 'student';
+}
+
+function buildSelectedClassmatePrompt(selectedAgents: SelectedAgentHint[]): string {
+  if (selectedAgents.length === 0) return '';
+
+  const promptPayload = selectedAgents.map((agent) => ({
+    name: agent.name,
+    role: normalizeClassmateRole(agent.role),
+    persona: agent.persona || '',
+    avatar: agent.avatar || '',
+  }));
+
+  return `
+User-selected classmate archetypes (mandatory in auto-generation mode):
+${JSON.stringify(promptPayload, null, 2)}
+
+Requirements for selected classmates:
+- Include one generated assistant/student agent for EACH selected archetype above.
+- Keep each selected classmate's exact name and normalized role.
+- Preserve the recognizable personality while adapting the persona to this course.
+- These classmates should be suitable for asking questions or initiating discussions during playback.
+`;
+}
+
+function buildFallbackPersona(agent: SelectedAgentHint, language: string): string {
+  const persona = agent.persona?.trim();
+  const personaReference = persona ? persona.slice(0, 500) : '';
+
+  if (language.startsWith('zh')) {
+    return personaReference
+      ? `保留所选角色的性格，并结合本课程在恰当时提出简短问题或开启讨论。角色参考：${personaReference}`
+      : '保留所选同学角色的课堂性格，并结合本课程在恰当时提出简短问题或开启讨论。';
+  }
+
+  return personaReference
+    ? `Keeps the selected classmate persona and adapts it to this course. This agent asks concise questions or opens discussion when helpful. Persona reference: ${personaReference}`
+    : 'Keeps the selected classmate persona and adapts it to this course, asking concise questions or opening discussion when helpful.';
+}
+
+function pickUnusedValue(values: readonly string[], used: Set<string>, preferred?: string): string {
+  if (preferred && values.includes(preferred) && !used.has(preferred)) return preferred;
+  return values.find((value) => !used.has(value)) || values[0] || preferred || '';
+}
+
+function appendMissingSelectedClassmates(
+  agents: ParsedAgentProfile[],
+  selectedAgents: SelectedAgentHint[],
+  availableAvatars: string[],
+  language: string,
+): ParsedAgentProfile[] {
+  if (selectedAgents.length === 0) return agents;
+
+  const result = [...agents];
+  const selectedByName = new Map(selectedAgents.map((agent) => [agent.name.trim(), agent]));
+  for (const agent of result) {
+    const selectedAgent = selectedByName.get(agent.name.trim());
+    if (!selectedAgent) continue;
+    agent.role = normalizeClassmateRole(selectedAgent.role);
+    agent.priority = agent.role === 'assistant' ? 7 : 5;
+  }
+
+  const usedNames = new Set(result.map((agent) => agent.name.trim()));
+  const usedAvatars = new Set(result.map((agent) => agent.avatar).filter(Boolean));
+  const usedColors = new Set(result.map((agent) => agent.color).filter(Boolean));
+
+  for (const selectedAgent of selectedAgents) {
+    const selectedName = selectedAgent.name.trim();
+    if (!selectedName || usedNames.has(selectedName)) continue;
+
+    const role = normalizeClassmateRole(selectedAgent.role);
+    const avatar = pickUnusedValue(availableAvatars, usedAvatars, selectedAgent.avatar);
+    const color = pickUnusedValue(AGENT_COLOR_PALETTE, usedColors, selectedAgent.color);
+
+    result.push({
+      name: selectedName,
+      role,
+      persona: buildFallbackPersona(selectedAgent, language),
+      avatar,
+      color,
+      priority: role === 'assistant' ? 7 : 5,
+      ...(selectedAgent.voice ? { voice: selectedAgent.voice } : {}),
+    });
+
+    usedNames.add(selectedName);
+    usedAvatars.add(avatar);
+    usedColors.add(color);
+  }
+
+  return result;
 }
 
 export async function POST(req: NextRequest) {
@@ -47,6 +161,7 @@ export async function POST(req: NextRequest) {
       availableAvatars,
       avatarDescriptions,
       availableVoices,
+      selectedAgents: rawSelectedAgents,
     } = body;
     stageName = stageInfo?.name;
 
@@ -65,6 +180,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const selectedClassmateAgents = (rawSelectedAgents ?? [])
+      .filter((agent) => agent.role !== 'teacher' && agent.name?.trim())
+      .map((agent) => ({
+        ...agent,
+        role: normalizeClassmateRole(agent.role),
+        name: agent.name.trim(),
+      }));
+
     // ── Model resolution from request headers ──
     const { model: languageModel, modelString: _modelString } = await resolveModelFromHeaders(req);
     modelString = _modelString;
@@ -75,6 +198,7 @@ export async function POST(req: NextRequest) {
           .map((s, i) => `${i + 1}. ${s.title}${s.description ? ` — ${s.description}` : ''}`)
           .join('\n')
       : null;
+    const selectedClassmatePrompt = buildSelectedClassmatePrompt(selectedClassmateAgents);
 
     const systemPrompt = `You are an expert instructional designer. Generate agent profiles for a multi-agent classroom simulation. Decide the appropriate number of agents (typically 3-5) based on the course content and complexity. Return ONLY valid JSON, no markdown or explanation.`;
 
@@ -104,8 +228,9 @@ export async function POST(req: NextRequest) {
 Course name: ${stageInfo.name}
 ${stageInfo.description ? `Course description: ${stageInfo.description}` : ''}
 ${sceneSummary ? `\nScene outlines:\n${sceneSummary}\n` : ''}
+${selectedClassmatePrompt}
 Requirements:
-- Decide the appropriate number of agents based on the course content (typically 3-5)
+- Decide the appropriate number of agents based on the course content (typically 3-5, or more if needed to include all user-selected classmates)
 - Exactly 1 agent must have role "teacher", the rest can be "assistant" or "student"
 - Priority values: teacher=10 (highest), assistant=7, student=4-6
 - Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
@@ -146,15 +271,7 @@ Return a JSON object with this exact structure:
     // ── Parse LLM response ──
     const rawText = stripCodeFences(result.text);
     let parsed: {
-      agents: Array<{
-        name: string;
-        role: string;
-        persona: string;
-        avatar: string;
-        color: string;
-        priority: number;
-        voice?: string;
-      }>;
+      agents: ParsedAgentProfile[];
     };
 
     try {
@@ -162,6 +279,15 @@ Return a JSON object with this exact structure:
     } catch {
       log.error('Failed to parse LLM response as JSON:', rawText.substring(0, 500));
       return apiError('PARSE_FAILED', 500, 'Failed to parse agent profiles from LLM response');
+    }
+
+    if (Array.isArray(parsed.agents)) {
+      parsed.agents = appendMissingSelectedClassmates(
+        parsed.agents,
+        selectedClassmateAgents,
+        availableAvatars,
+        language,
+      );
     }
 
     // ── Validate parsed structure ──

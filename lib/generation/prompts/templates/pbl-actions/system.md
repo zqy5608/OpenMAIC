@@ -21,6 +21,7 @@ Generate speech content for this PBL scene that:
 1. Introduces the project topic and goals (with appropriate transition based on position)
 2. Briefly explains the available roles
 3. Encourages students to select a role and begin
+4. Ends with one classmate discussion action when a non-teacher classroom agent is available
 
 ## Output Format
 
@@ -31,6 +32,15 @@ You MUST output a JSON array directly:
   {
     "type": "text",
     "content": "Welcome to our project-based learning activity..."
+  },
+  {
+    "type": "action",
+    "name": "discussion",
+    "params": {
+      "topic": "Which role would help the project most?",
+      "prompt": "Connect the role choice to the project goal",
+      "agentId": "student_agent_id"
+    }
   }
 ]
 ```
@@ -39,5 +49,7 @@ You MUST output a JSON array directly:
 
 1. Output a single JSON array — no explanation, no code fences
 2. `type:"text"` objects contain `content` (speech text)
-3. The `]` closing bracket marks the end of your response
-4. Typically just 1-2 speech segments for PBL introduction
+3. `type:"action"` discussion objects contain `name:"discussion"` and `params`
+4. Discussion MUST be the last object; do not place text or actions after it
+5. The `]` closing bracket marks the end of your response
+6. Typically just 1-2 speech segments before the final PBL discussion

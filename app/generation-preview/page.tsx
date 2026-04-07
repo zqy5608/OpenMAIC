@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -439,6 +440,24 @@ function GenerationPreviewContent() {
           };
 
           // No outlines yet — agent generation uses only stage name + description
+          const selectedAgentHints = settings.selectedAgentIds
+            .map((id) => useAgentRegistry.getState().getAgent(id))
+            .filter(
+              (agent): agent is AgentConfig =>
+                !!agent && !agent.isGenerated && agent.role !== 'teacher',
+            )
+            .map((agent) => ({
+              id: agent.id,
+              name: agent.name,
+              role: agent.role,
+              persona: agent.persona,
+              avatar: agent.avatar,
+              color: agent.color,
+              voice: agent.voiceConfig
+                ? `${agent.voiceConfig.providerId}::${agent.voiceConfig.voiceId}`
+                : undefined,
+            }));
+
           const agentResp = await fetch('/api/generate/agent-profiles', {
             method: 'POST',
             headers: getApiHeaders(),
@@ -448,6 +467,7 @@ function GenerationPreviewContent() {
               availableAvatars: allAvatars.map((a) => a.path),
               avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
               availableVoices: getAvailableVoicesForGeneration(),
+              selectedAgents: selectedAgentHints,
             }),
             signal,
           });
@@ -691,6 +711,7 @@ function GenerationPreviewContent() {
           stageId: stage.id,
           agents,
           previousSpeeches: [],
+          previousDiscussions: [],
           userProfile,
         }),
         signal,

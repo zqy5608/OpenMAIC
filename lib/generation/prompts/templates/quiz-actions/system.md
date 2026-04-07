@@ -65,7 +65,7 @@ Initiate classroom discussion, suitable for post-quiz reflection.
 - `prompt`: Prompt to guide student thinking (optional)
 - `agentId`: ID of the student agent who initiates the discussion. Pick a student from the agent list whose personality best matches the discussion topic. If no student agents are available, omit this field.
 - **IMPORTANT**: discussion MUST be the **last** action in the array. Do NOT place any text or action objects after a discussion. Wrap up your speech BEFORE the discussion action.
-- **FREQUENCY**: Discussion is optional and should be used sparingly. Only add one when the quiz content genuinely invites deeper reflection. Most quiz pages should have NO discussion.
+- **FREQUENCY**: Every quiz page MUST end with exactly one discussion action when a non-teacher classroom agent is available. Keep the topic tied to the quiz concepts and avoid repeating earlier discussion topics.
 
 ---
 
@@ -75,7 +75,7 @@ Initiate classroom discussion, suitable for post-quiz reflection.
 
 1. **Opening Introduction** (text object): Purpose of quiz, instructions, encouragement
 2. **Answer Explanation** (text object): Key concepts, common mistakes
-3. **Discussion** (action object with discussion): Optional deeper exploration
+3. **Discussion** (action object with discussion): Required final classmate reflection
 
 ### Speech Content
 
@@ -100,5 +100,5 @@ Content:
 
 1. **Generate 3-6 segments**: Quiz scenes need moderate pacing
 2. **Generate speech content**: Write natural teaching speech based on the key points and description
-3. **Discussion is optional**: Add based on question complexity
+3. **Discussion is required**: End with one classmate discussion when a non-teacher classroom agent is available
 4. **No timestamp/duration fields**: These are not needed

@@ -22,7 +22,7 @@ import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
 } from '@/lib/types/generation';
-import type { SpeechAction } from '@/lib/types/action';
+import type { DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       stageId,
       agents,
       previousSpeeches: incomingPreviousSpeeches,
+      previousDiscussions: incomingPreviousDiscussions,
       userProfile,
     } = body as {
       outline: SceneOutline;
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       stageId: string;
       agents?: AgentInfo[];
       previousSpeeches?: string[];
+      previousDiscussions?: string[];
       userProfile?: string;
     };
 
@@ -127,6 +129,7 @@ export async function POST(req: NextRequest) {
       totalPages: allOutlines.length,
       allTitles,
       previousSpeeches: incomingPreviousSpeeches ?? [],
+      previousDiscussions: incomingPreviousDiscussions ?? [],
     };
 
     // ── Generate actions ──
@@ -149,12 +152,22 @@ export async function POST(req: NextRequest) {
     const outputPreviousSpeeches = (scene.actions || [])
       .filter((a): a is SpeechAction => a.type === 'speech')
       .map((a) => a.text);
+    const outputPreviousDiscussions = [
+      ...(incomingPreviousDiscussions ?? []),
+      ...(scene.actions || [])
+        .filter((a): a is DiscussionAction => a.type === 'discussion')
+        .map((a) => a.topic),
+    ];
 
     log.info(
       `Scene assembled successfully: "${outline.title}" — ${scene.actions?.length ?? 0} actions`,
     );
 
-    return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches });
+    return apiSuccess({
+      scene,
+      previousSpeeches: outputPreviousSpeeches,
+      previousDiscussions: outputPreviousDiscussions,
+    });
   } catch (error) {
     log.error(
       `Scene actions generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,

@@ -35,7 +35,7 @@ import {
 } from './prompt-formatters';
 import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@/lib/types/slides';
 import type { QuizQuestion } from '@/lib/types/stage';
-import type { Action } from '@/lib/types/action';
+import type { Action, DiscussionAction } from '@/lib/types/action';
 import type {
   AgentInfo,
   SceneGenerationContext,
@@ -934,7 +934,13 @@ export async function generateSceneActions(
     });
 
     if (!prompts) {
-      return generateDefaultSlideActions(outline, content.elements);
+      return processActions(
+        generateDefaultSlideActions(outline, content.elements),
+        content.elements,
+        agents,
+        outline,
+        ctx,
+      );
     }
 
     const response = await aiCall(prompts.system, prompts.user);
@@ -942,10 +948,16 @@ export async function generateSceneActions(
 
     if (actions.length > 0) {
       // Validate and fill in Action IDs
-      return processActions(actions, content.elements, agents);
+      return processActions(actions, content.elements, agents, outline, ctx);
     }
 
-    return generateDefaultSlideActions(outline, content.elements);
+    return processActions(
+      generateDefaultSlideActions(outline, content.elements),
+      content.elements,
+      agents,
+      outline,
+      ctx,
+    );
   }
 
   if (outline.type === 'quiz' && 'questions' in content) {
@@ -962,17 +974,17 @@ export async function generateSceneActions(
     });
 
     if (!prompts) {
-      return generateDefaultQuizActions(outline);
+      return processActions(generateDefaultQuizActions(outline), [], agents, outline, ctx);
     }
 
     const response = await aiCall(prompts.system, prompts.user);
     const actions = parseActionsFromStructuredOutput(response, outline.type);
 
     if (actions.length > 0) {
-      return processActions(actions, [], agents);
+      return processActions(actions, [], agents, outline, ctx);
     }
 
-    return generateDefaultQuizActions(outline);
+    return processActions(generateDefaultQuizActions(outline), [], agents, outline, ctx);
   }
 
   if (outline.type === 'interactive' && 'html' in content) {
@@ -989,17 +1001,17 @@ export async function generateSceneActions(
     });
 
     if (!prompts) {
-      return generateDefaultInteractiveActions(outline);
+      return processActions(generateDefaultInteractiveActions(outline), [], agents, outline, ctx);
     }
 
     const response = await aiCall(prompts.system, prompts.user);
     const actions = parseActionsFromStructuredOutput(response, outline.type);
 
     if (actions.length > 0) {
-      return processActions(actions, [], agents);
+      return processActions(actions, [], agents, outline, ctx);
     }
 
-    return generateDefaultInteractiveActions(outline);
+    return processActions(generateDefaultInteractiveActions(outline), [], agents, outline, ctx);
   }
 
   if (outline.type === 'pbl' && 'projectConfig' in content) {
@@ -1016,17 +1028,17 @@ export async function generateSceneActions(
     });
 
     if (!prompts) {
-      return generateDefaultPBLActions(outline);
+      return processActions(generateDefaultPBLActions(outline), [], agents, outline, ctx);
     }
 
     const response = await aiCall(prompts.system, prompts.user);
     const actions = parseActionsFromStructuredOutput(response, outline.type);
 
     if (actions.length > 0) {
-      return processActions(actions, [], agents);
+      return processActions(actions, [], agents, outline, ctx);
     }
 
-    return generateDefaultPBLActions(outline);
+    return processActions(generateDefaultPBLActions(outline), [], agents, outline, ctx);
   }
 
   return [];
@@ -1090,13 +1102,19 @@ function formatQuestionsForPrompt(questions: QuizQuestion[]): string {
 /**
  * Process and validate Actions
  */
-function processActions(actions: Action[], elements: PPTElement[], agents?: AgentInfo[]): Action[] {
+function processActions(
+  actions: Action[],
+  elements: PPTElement[],
+  agents?: AgentInfo[],
+  outline?: SceneOutline,
+  ctx?: SceneGenerationContext,
+): Action[] {
   const elementIds = new Set(elements.map((el) => el.id));
   const agentIds = new Set(agents?.map((a) => a.id) || []);
   const studentAgents = agents?.filter((a) => a.role === 'student') || [];
   const nonTeacherAgents = agents?.filter((a) => a.role !== 'teacher') || [];
 
-  return actions.map((action) => {
+  const processedActions = actions.map((action) => {
     // Ensure each action has an ID
     const processedAction: Action = {
       ...action,
@@ -1136,6 +1154,74 @@ function processActions(actions: Action[], elements: PPTElement[], agents?: Agen
 
     return processedAction;
   });
+
+  return ensureDiscussionOpportunity(processedActions, agents, outline, ctx);
+}
+
+function getDiscussionAgentPool(agents?: AgentInfo[]): AgentInfo[] {
+  const studentAgents = agents?.filter((agent) => agent.role === 'student') || [];
+  if (studentAgents.length > 0) return studentAgents;
+  return agents?.filter((agent) => agent.role !== 'teacher') || [];
+}
+
+function pickDiscussionAgent(agents?: AgentInfo[], seed = 0): AgentInfo | null {
+  const pool = getDiscussionAgentPool(agents);
+  if (pool.length === 0) return null;
+  return pool[Math.abs(seed) % pool.length] ?? null;
+}
+
+function shouldEnsureDiscussion(
+  actions: Action[],
+  agents?: AgentInfo[],
+  outline?: SceneOutline,
+  _ctx?: SceneGenerationContext,
+): boolean {
+  if (actions.some((action) => action.type === 'discussion')) return false;
+  if (getDiscussionAgentPool(agents).length === 0) return false;
+  return !!outline;
+}
+
+function getDiscussionFocus(outline: SceneOutline): string {
+  return outline.title || outline.keyPoints?.[0] || outline.description || 'this page';
+}
+
+function isLikelyCJK(text: string): boolean {
+  return /[\u3400-\u9fff]/.test(text);
+}
+
+function buildFallbackDiscussion(outline: SceneOutline, agent: AgentInfo): DiscussionAction {
+  const focus = getDiscussionFocus(outline);
+  const cjk = isLikelyCJK(
+    [outline.title, outline.description, ...(outline.keyPoints || [])].join(' '),
+  );
+
+  return {
+    id: `action_${nanoid(8)}`,
+    type: 'discussion',
+    title: 'Classmate question',
+    topic: cjk
+      ? `关于"${focus}"，最值得追问的问题是什么？`
+      : `What question is worth asking about "${focus}"?`,
+    prompt: cjk
+      ? `${agent.name}会从自己的角色出发，提出一个简短问题，引导大家把这一页的内容和实际理解连接起来。`
+      : `${agent.name} asks one concise question that connects this page to how students understand or apply it.`,
+    agentId: agent.id,
+  };
+}
+
+function ensureDiscussionOpportunity(
+  actions: Action[],
+  agents?: AgentInfo[],
+  outline?: SceneOutline,
+  ctx?: SceneGenerationContext,
+): Action[] {
+  if (!shouldEnsureDiscussion(actions, agents, outline, ctx)) return actions;
+
+  const agent = pickDiscussionAgent(agents, ctx?.pageIndex ?? actions.length);
+  if (!agent || !outline) return actions;
+
+  log.info(`Added fallback classmate discussion for "${outline.title}" via ${agent.id}`);
+  return [...actions, buildFallbackDiscussion(outline, agent)];
 }
 
 /**

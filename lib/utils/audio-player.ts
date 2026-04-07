@@ -250,7 +250,8 @@ export class AudioPlayer {
     }
     if (this.speechUtterance && typeof window !== 'undefined' && 'speechSynthesis' in window) {
       if (this.browserSpeechPaused && this.speechText) {
-        this.speakWithBrowser(this.speechText);
+        this.browserSpeechPaused = false;
+        window.speechSynthesis.resume();
       } else if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }

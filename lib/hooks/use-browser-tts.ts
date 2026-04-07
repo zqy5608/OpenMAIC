@@ -159,16 +159,17 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
 
   const resume = useCallback(() => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
-      if (pausedRef.current && currentSpeechRef.current) {
-        const current = currentSpeechRef.current;
-        speak(current.text, current.voiceURI);
+      if (pausedRef.current && utteranceRef.current) {
+        pausedRef.current = false;
+        setIsPaused(false);
+        window.speechSynthesis.resume();
         return;
       }
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
     }
-  }, [speak]);
+  }, []);
 
   const cancel = useCallback(() => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {

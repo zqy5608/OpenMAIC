@@ -8,8 +8,7 @@ import { db } from '@/lib/utils/database';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
-import type { Action, SpeechAction } from '@/lib/types/action';
-import type { TTSProviderId } from '@/lib/audio/types';
+import type { DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
@@ -27,6 +26,7 @@ interface SceneActionsResult {
   success: boolean;
   scene?: Scene;
   previousSpeeches?: string[];
+  previousDiscussions?: string[];
   error?: string;
 }
 
@@ -101,6 +101,7 @@ async function fetchSceneActions(
     stageId: string;
     agents?: AgentInfo[];
     previousSpeeches?: string[];
+    previousDiscussions?: string[];
     userProfile?: string;
   },
   signal?: AbortSignal,
@@ -210,6 +211,16 @@ async function generateTTSForScene(
   };
 }
 
+function collectDiscussionTopics(scenes: Scene[]): string[] {
+  return [...scenes]
+    .sort((a, b) => a.order - b.order)
+    .flatMap((scene) =>
+      (scene.actions || [])
+        .filter((action): action is DiscussionAction => action.type === 'discussion')
+        .map((action) => action.topic),
+    );
+}
+
 export interface UseSceneGeneratorOptions {
   onSceneGenerated?: (scene: Scene, index: number) => void;
   onSceneFailed?: (outline: SceneOutline, error: string) => void;
@@ -291,6 +302,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       // Get previousSpeeches from last completed scene
       let previousSpeeches: string[] = [];
       const sortedScenes = [...scenes].sort((a, b) => a.order - b.order);
+      let previousDiscussions = collectDiscussionTopics(sortedScenes);
       if (sortedScenes.length > 0) {
         const lastScene = sortedScenes[sortedScenes.length - 1];
         previousSpeeches = (lastScene.actions || [])
@@ -353,6 +365,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               stageId: stage.id,
               agents: params.agents,
               previousSpeeches,
+              previousDiscussions,
               userProfile: params.userProfile,
             },
             signal,
@@ -388,6 +401,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             store.getState().addScene(scene);
             options.onSceneGenerated?.(scene, outline.order);
             previousSpeeches = actionsResult.previousSpeeches || [];
+            previousDiscussions = actionsResult.previousDiscussions || previousDiscussions;
           } else {
             if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
               pausedByFailureOrAbort = true;
@@ -481,12 +495,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
         // Step 2: Actions
         const sortedScenes = [...store.getState().scenes].sort((a, b) => a.order - b.order);
-        const lastScene = sortedScenes[sortedScenes.length - 1];
+        const previousScenes = sortedScenes.filter((scene) => scene.order < outline.order);
+        const lastScene = previousScenes[previousScenes.length - 1];
         const previousSpeeches = lastScene
           ? (lastScene.actions || [])
               .filter((a): a is SpeechAction => a.type === 'speech')
               .map((a) => a.text)
           : [];
+        const previousDiscussions = collectDiscussionTopics(previousScenes);
 
         const actionsResult = await fetchSceneActions(
           {
@@ -496,6 +512,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             stageId: state.stage.id,
             agents: params.agents,
             previousSpeeches,
+            previousDiscussions,
             userProfile: params.userProfile,
           },
           signal,
