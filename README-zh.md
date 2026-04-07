@@ -133,6 +133,23 @@ VIDEO_MINIMAX_API_KEY=...
 VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
 ```
 
+如果希望通过 Ollama 使用本地模型：
+
+```bash
+ollama pull qwen3:8b
+ollama serve
+```
+
+然后在 `.env.local` 中配置：
+
+```env
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_MODELS=qwen3:8b
+DEFAULT_MODEL=ollama:qwen3:8b
+```
+
+Ollama 会忽略 API Key；未配置时 OpenMAIC 会自动发送一个占位 key。
+
 > **推荐模型：** **Gemini 3 Flash** — 效果与速度的最佳平衡。追求最高质量可选 **Gemini 3.1 Pro**（速度较慢）。
 >
 > 如果希望 OpenMAIC 服务端默认走 Gemini，还需要额外设置 `DEFAULT_MODEL=google:gemini-3-flash-preview`。

@@ -24,10 +24,11 @@ interface ChatAreaProps {
   onActiveBubble?: (messageId: string | null) => void;
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
+  onSpeechReady?: (text: string, agentId: string | null) => void;
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
   onCueUser?: (fromAgentId?: string, prompt?: string) => void;
   onLiveSessionError?: () => void;
-  onStopSession?: () => void;
+  onStopSession?: (reason: 'manual' | 'natural') => void;
   onSegmentSealed?: (
     messageId: string,
     partId: string,
@@ -75,6 +76,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onActiveBubble,
       onLiveSpeech,
       onSpeechProgress,
+      onSpeechReady,
       onThinking,
       onCueUser,
       onLiveSessionError,
@@ -110,6 +112,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     } = useChatSessions({
       onLiveSpeech,
       onSpeechProgress,
+      onSpeechReady,
       onThinking,
       onCueUser,
       onActiveBubble,
@@ -175,7 +178,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     const handleEndSession = useCallback(
       async (sessionId: string) => {
         await endSession(sessionId);
-        onStopSession?.();
+        onStopSession?.('manual');
       },
       [endSession, onStopSession],
     );

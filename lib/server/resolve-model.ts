@@ -80,7 +80,6 @@ export function resolveModelFromHeaders(req: NextRequest): Promise<ResolvedModel
     apiKey: req.headers.get('x-api-key') || undefined,
     baseUrl: req.headers.get('x-base-url') || undefined,
     providerType: req.headers.get('x-provider-type') || undefined,
-    requiresApiKey:
-      requiresApiKeyHeader === null ? undefined : requiresApiKeyHeader === 'true',
+    requiresApiKey: requiresApiKeyHeader === null ? undefined : requiresApiKeyHeader === 'true',
   });
 }

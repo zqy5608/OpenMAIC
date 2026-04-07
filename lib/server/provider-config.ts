@@ -39,6 +39,7 @@ interface ServerConfig {
 
 const LLM_ENV_MAP: Record<string, string> = {
   OPENAI: 'openai',
+  OLLAMA: 'ollama',
   ANTHROPIC: 'anthropic',
   GOOGLE: 'google',
   DEEPSEEK: 'deepseek',
@@ -50,6 +51,8 @@ const LLM_ENV_MAP: Record<string, string> = {
   DOUBAO: 'doubao',
   GROK: 'grok',
 };
+
+const KEYLESS_LLM_PROVIDERS = new Set(['ollama']);
 
 const TTS_ENV_MAP: Record<string, string> = {
   TTS_OPENAI: 'openai-tts',
@@ -127,16 +130,22 @@ function loadYamlFile(filename: string): YamlData {
 function loadEnvSection(
   envMap: Record<string, string>,
   yamlSection: Record<string, Partial<ServerProviderEntry>> | undefined,
-  { requiresBaseUrl = false }: { requiresBaseUrl?: boolean } = {},
+  {
+    requiresBaseUrl = false,
+    keylessProviderIds = new Set<string>(),
+  }: { requiresBaseUrl?: boolean; keylessProviderIds?: Set<string> } = {},
 ): Record<string, ServerProviderEntry> {
   const result: Record<string, ServerProviderEntry> = {};
 
   // First, add everything from YAML as defaults
   if (yamlSection) {
     for (const [id, entry] of Object.entries(yamlSection)) {
-      const hasKey = !!entry?.apiKey;
-      const hasUrl = !!entry?.baseUrl;
-      if (requiresBaseUrl ? hasUrl : hasKey) {
+      const hasApiKey = !!entry?.apiKey;
+      const hasBaseUrl = !!entry?.baseUrl;
+      const isKeylessProvider = keylessProviderIds.has(id);
+      const hasKeylessConfig = !!(entry?.baseUrl || entry?.models?.length || entry?.proxy);
+
+      if (requiresBaseUrl ? hasBaseUrl : hasApiKey || (isKeylessProvider && hasKeylessConfig)) {
         result[id] = {
           apiKey: entry.apiKey || '',
           baseUrl: entry.baseUrl,
@@ -167,7 +176,14 @@ function loadEnvSection(
       continue;
     }
 
-    if (requiresBaseUrl ? !envBaseUrl : !envApiKey) continue;
+    if (requiresBaseUrl) {
+      if (!envBaseUrl) continue;
+    } else if (keylessProviderIds.has(providerId)) {
+      if (!envApiKey && !envBaseUrl && !envModels?.length) continue;
+    } else if (!envApiKey) {
+      continue;
+    }
+
     result[providerId] = {
       apiKey: envApiKey || '',
       baseUrl: envBaseUrl,
@@ -189,7 +205,9 @@ const _configs: Map<string, ServerConfig> = new Map();
 
 function buildConfig(yamlData: YamlData): ServerConfig {
   return {
-    providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers),
+    providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
+      keylessProviderIds: KEYLESS_LLM_PROVIDERS,
+    }),
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr),
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),

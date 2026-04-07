@@ -397,6 +397,7 @@
     "providerNames": {
       "openai": "OpenAI",
       "openai-codex": "OpenAI Codex",
+      "ollama": "Ollama",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",

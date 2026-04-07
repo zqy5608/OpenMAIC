@@ -35,12 +35,13 @@ const log = createLogger('ChatSessions');
 interface UseChatSessionsOptions {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
+  onSpeechReady?: (text: string, agentId: string | null) => void;
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
   onCueUser?: (fromAgentId?: string, prompt?: string) => void;
   onActiveBubble?: (messageId: string | null) => void;
   onLiveSessionError?: () => void;
-  /** Called when a QA/Discussion session completes naturally (director end). */
-  onStopSession?: () => void;
+  /** Called when a QA/Discussion session stops, with the stop source. */
+  onStopSession?: (reason: 'manual' | 'natural') => void;
   onSegmentSealed?: (
     messageId: string,
     partId: string,
@@ -54,6 +55,7 @@ interface UseChatSessionsOptions {
 export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const onLiveSpeechRef = useRef(options.onLiveSpeech);
   const onSpeechProgressRef = useRef(options.onSpeechProgress);
+  const onSpeechReadyRef = useRef(options.onSpeechReady);
   const onThinkingRef = useRef(options.onThinking);
   const onCueUserRef = useRef(options.onCueUser);
   const onActiveBubbleRef = useRef(options.onActiveBubble);
@@ -64,6 +66,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   useEffect(() => {
     onLiveSpeechRef.current = options.onLiveSpeech;
     onSpeechProgressRef.current = options.onSpeechProgress;
+    onSpeechReadyRef.current = options.onSpeechReady;
     onThinkingRef.current = options.onThinking;
     onCueUserRef.current = options.onCueUser;
     onActiveBubbleRef.current = options.onActiveBubble;
@@ -74,6 +77,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   }, [
     options.onLiveSpeech,
     options.onSpeechProgress,
+    options.onSpeechReady,
     options.onThinking,
     options.onCueUser,
     options.onActiveBubble,
@@ -312,6 +316,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 };
               }),
             );
+          },
+
+          onSpeechReady(text: string, agentId: string | null) {
+            // Lecture audio is driven by PlaybackEngine/AudioPlayer. This hook is only for
+            // live QA/discussion replies, whose text comes from the StreamBuffer.
+            if (type === 'lecture') return;
+            onSpeechReadyRef.current?.(text, agentId);
           },
 
           onActionReady(messageId: string, data: ActionItem) {
@@ -595,7 +606,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 : s,
             ),
           );
-          onStopSessionRef.current?.();
+          onStopSessionRef.current?.('natural');
         }
         // If maxTurns reached, log it
         if (turnCount >= maxTurns && doneData && doneData.totalAgents > 0) {

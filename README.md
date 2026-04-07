@@ -133,6 +133,23 @@ VIDEO_MINIMAX_API_KEY=...
 VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
 ```
 
+For local models through Ollama:
+
+```bash
+ollama pull qwen3:8b
+ollama serve
+```
+
+Then configure `.env.local`:
+
+```env
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_MODELS=qwen3:8b
+DEFAULT_MODEL=ollama:qwen3:8b
+```
+
+Ollama ignores API keys; OpenMAIC will send a dummy key when none is configured.
+
 > **Recommended model:** **Gemini 3 Flash** — best balance of quality and speed. For highest quality (at slower speed), try **Gemini 3.1 Pro**.
 >
 > If you want OpenMAIC server APIs to use Gemini by default, also set `DEFAULT_MODEL=google:gemini-3-flash-preview`.

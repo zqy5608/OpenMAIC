@@ -101,6 +101,11 @@ export interface StreamBufferCallbacks {
    * @param isComplete — true when this text item is fully revealed AND sealed
    */
   onTextReveal(messageId: string, partId: string, revealedText: string, isComplete: boolean): void;
+  /**
+   * Fired once for a sealed text segment when its full content is ready.
+   * Used by live QA/discussion TTS; lecture audio is handled by PlaybackEngine.
+   */
+  onSpeechReady?(text: string, agentId: string | null): void;
   /** Fired when tick reaches an action item. Callers should execute the effect + add badge. */
   onActionReady(messageId: string, data: ActionItem): void;
   /**
@@ -190,6 +195,7 @@ export class StreamBuffer {
   private partCounter = 0;
   private _drainResolve: (() => void) | null = null;
   private _drainReject: ((err: Error) => void) | null = null;
+  private speechReadyPartIds = new Set<string>();
 
   constructor(callbacks: StreamBufferCallbacks, options?: StreamBufferOptions) {
     this.cb = callbacks;
@@ -482,6 +488,8 @@ export class StreamBuffer {
 
     switch (item.kind) {
       case 'text': {
+        this.emitSpeechReady(item);
+
         // Advance character cursor
         this.charCursor = Math.min(this.charCursor + this.charsPerTick, item.text.length);
         const revealed = item.text.slice(0, this.charCursor);
@@ -606,6 +614,15 @@ export class StreamBuffer {
         this.charCursor = 0;
         this.advanceNonText();
         break;
+    }
+  }
+
+  private emitSpeechReady(item: TextItem): void {
+    if (!item.sealed || this.speechReadyPartIds.has(item.partId)) return;
+    this.speechReadyPartIds.add(item.partId);
+    const text = item.text.trim();
+    if (text) {
+      this.cb.onSpeechReady?.(text, this.currentAgentId);
     }
   }
 

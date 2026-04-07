@@ -306,6 +306,53 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  ollama: {
+    id: 'ollama',
+    name: 'Ollama',
+    type: 'openai',
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    requiresApiKey: false,
+    authModes: ['apiKey'],
+    defaultAuthMode: 'apiKey',
+    models: [
+      {
+        id: 'qwen3:8b',
+        name: 'Qwen3 8B',
+        contextWindow: 40960,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+      {
+        id: 'qwen3:14b',
+        name: 'Qwen3 14B',
+        contextWindow: 40960,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+      {
+        id: 'llama3.1:8b',
+        name: 'Llama 3.1 8B',
+        contextWindow: 128000,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+      {
+        id: 'gpt-oss:20b',
+        name: 'GPT-OSS 20B',
+        contextWindow: 128000,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+      {
+        id: 'gemma3:12b',
+        name: 'Gemma 3 12B',
+        contextWindow: 128000,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+    ],
+  },
+
   anthropic: {
     id: 'anthropic',
     name: 'Claude',
@@ -1177,7 +1224,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   }
 
   // Use provided API key, or empty string for providers that don't require one
-  const effectiveApiKey = config.apiKey || '';
+  const effectiveApiKey =
+    config.providerId === 'ollama' ? config.apiKey || 'ollama' : config.apiKey || '';
 
   // Resolve base URL: explicit > provider default > SDK default
   const provider = getProviderConfig(config.providerId);

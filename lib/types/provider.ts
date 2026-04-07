@@ -8,6 +8,7 @@
 export type BuiltInProviderId =
   | 'openai'
   | 'openai-codex'
+  | 'ollama'
   | 'anthropic'
   | 'google'
   | 'deepseek'

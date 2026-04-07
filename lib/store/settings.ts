@@ -809,16 +809,24 @@ export const useSettingsStore = create<SettingsState>()(
                 const key = pid as ProviderId;
                 if (newProvidersConfig[key]) {
                   const currentModels = newProvidersConfig[key].models;
-                  // When server specifies allowed models, filter the models list
-                  const filteredModels = info.models?.length
-                    ? currentModels.filter((m) => info.models!.includes(m.id))
+                  // When server specifies allowed models, keep that list and preserve metadata.
+                  const serverModels = info.models;
+                  const configuredModels = serverModels?.length
+                    ? serverModels.map(
+                        (modelId) =>
+                          currentModels.find((m) => m.id === modelId) ?? {
+                            id: modelId,
+                            name: modelId,
+                            capabilities: { streaming: true, tools: false, vision: false },
+                          },
+                      )
                     : currentModels;
                   newProvidersConfig[key] = {
                     ...newProvidersConfig[key],
                     isServerConfigured: true,
-                    serverModels: info.models,
+                    serverModels,
                     serverBaseUrl: info.baseUrl,
-                    models: filteredModels,
+                    models: configuredModels,
                   };
                 }
               }
