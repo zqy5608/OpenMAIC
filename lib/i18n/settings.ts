@@ -530,6 +530,13 @@ export const settingsZhCN = {
     oauthDisconnect: '断开连接',
     oauthLoginButton: '使用 ChatGPT 登录',
     oauthOrApiKey: '或在下方输入 API Key',
+    // Ollama
+    ollamaDetectModels: '检测模型',
+    ollamaDetected: '检测到',
+    ollamaModelsFound: '个模型',
+    ollamaNewModels: '个新增',
+    ollamaNoModels: '未发现模型。请先拉取模型：ollama pull llama3.2',
+    ollamaConnectionFailed: '无法连接 Ollama，请确认已启动',
     // Access code
     setupNeeded: '请先完成配置',
     modelNotConfigured: '请选择一个模型以开始使用',
@@ -1124,6 +1131,13 @@ export const settingsEnUS = {
     oauthDisconnect: 'Disconnect',
     oauthLoginButton: 'Sign in with ChatGPT',
     oauthOrApiKey: 'Or enter an API key below',
+    // Ollama
+    ollamaDetectModels: 'Detect Models',
+    ollamaDetected: 'Detected',
+    ollamaModelsFound: 'models',
+    ollamaNewModels: 'new',
+    ollamaNoModels: 'No models found. Pull a model first: ollama pull llama3.2',
+    ollamaConnectionFailed: 'Cannot connect to Ollama. Is it running?',
     // Access code
     setupNeeded: 'Setup required',
     modelNotConfigured: 'Please select a model to get started',

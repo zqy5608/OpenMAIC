@@ -32,6 +32,7 @@ import {
   Send,
   LogIn,
   LogOut,
+  Search,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useOpenAIOAuth } from '@/lib/hooks/use-openai-oauth';
@@ -80,6 +81,7 @@ export function ProviderConfigPanel({
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [detectingModels, setDetectingModels] = useState(false);
 
   // Update local state when provider changes or initial values change
   useEffect(() => {
@@ -154,6 +156,60 @@ export function ProviderConfigPanel({
   }, [apiKey, baseUrl, provider.id, provider.type, requiresApiKey, providersConfig, t]);
 
   const models = providersConfig[provider.id]?.models || [];
+
+  const handleDetectOllamaModels = useCallback(async () => {
+    setDetectingModels(true);
+    try {
+      const ollamaBase = baseUrl || provider.defaultBaseUrl || 'http://localhost:11434';
+      // Strip /v1 suffix for the native Ollama API
+      const nativeBase = ollamaBase.replace(/\/v1\/?$/, '');
+      const res = await fetch(`/api/ollama-models?baseUrl=${encodeURIComponent(nativeBase)}`);
+      const data = await res.json();
+
+      if (data.models && data.models.length > 0) {
+        // Build new model entries from detected models
+        const currentModels = providersConfig[provider.id]?.models || [];
+        const detected = data.models.map(
+          (m: { id: string; name: string }) => ({
+            id: m.id,
+            name: m.name,
+            contextWindow: 131072,
+            outputWindow: 4096,
+            capabilities: { streaming: true, tools: true, vision: false },
+          }),
+        );
+
+        // Merge: keep existing entries, add new ones
+        const existingIds = new Set(currentModels.map((m: { id: string }) => m.id));
+        const newModels = detected.filter(
+          (m: { id: string }) => !existingIds.has(m.id),
+        );
+
+        if (newModels.length > 0) {
+          const merged = [...currentModels, ...newModels];
+          // Store the models via a direct store update
+          const { useSettingsStore } = await import('@/lib/store/settings');
+          useSettingsStore.getState().setProviderConfig(provider.id, { models: merged });
+        }
+
+        setTestStatus('success');
+        setTestMessage(
+          `${t('settings.ollamaDetected') || 'Detected'} ${data.models.length} ${t('settings.ollamaModelsFound') || 'models'}` +
+            (newModels.length > 0
+              ? ` (+${newModels.length} ${t('settings.ollamaNewModels') || 'new'})`
+              : ''),
+        );
+      } else {
+        setTestStatus('error');
+        setTestMessage(data.error || (t('settings.ollamaNoModels') || 'No models found. Pull a model first: ollama pull llama3.2'));
+      }
+    } catch {
+      setTestStatus('error');
+      setTestMessage(t('settings.ollamaConnectionFailed') || 'Cannot connect to Ollama. Is it running?');
+    } finally {
+      setDetectingModels(false);
+    }
+  }, [baseUrl, provider.defaultBaseUrl, provider.id, providersConfig, t]);
   const isServerConfigured = providersConfig[provider.id]?.isServerConfigured;
 
   return (
@@ -327,6 +383,22 @@ export function ProviderConfigPanel({
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 {t('settings.reset')}
+              </Button>
+            )}
+            {provider.id === 'ollama' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDetectOllamaModels}
+                disabled={detectingModels}
+                className="gap-1.5"
+              >
+                {detectingModels ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Search className="h-3.5 w-3.5" />
+                )}
+                {t('settings.ollamaDetectModels') || 'Detect Models'}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={onAddModel} className="gap-1.5">

@@ -837,6 +837,97 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
+
+  ollama: {
+    id: 'ollama',
+    name: 'Ollama',
+    type: 'openai',
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    requiresApiKey: false,
+    icon: '/logos/ollama.svg',
+    models: [
+      {
+        id: 'llama3.3:latest',
+        name: 'Llama 3.3 70B',
+        contextWindow: 131072,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'llama3.2:latest',
+        name: 'Llama 3.2 3B',
+        contextWindow: 131072,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'llama3.2-vision:latest',
+        name: 'Llama 3.2 Vision 11B',
+        contextWindow: 131072,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: false, vision: true },
+      },
+      {
+        id: 'qwen3:latest',
+        name: 'Qwen 3',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: { toggleable: true, budgetAdjustable: false, defaultEnabled: false },
+        },
+      },
+      {
+        id: 'qwen2.5-coder:latest',
+        name: 'Qwen 2.5 Coder 7B',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'deepseek-r1:latest',
+        name: 'DeepSeek R1 7B',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: {
+          streaming: true,
+          tools: false,
+          vision: false,
+          thinking: { toggleable: false, budgetAdjustable: false, defaultEnabled: true },
+        },
+      },
+      {
+        id: 'gemma3:latest',
+        name: 'Gemma 3',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'mistral:latest',
+        name: 'Mistral 7B',
+        contextWindow: 32768,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'phi4:latest',
+        name: 'Phi 4 14B',
+        contextWindow: 16384,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+      {
+        id: 'codellama:latest',
+        name: 'Code Llama 7B',
+        contextWindow: 16384,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+    ],
+  },
 };
 
 /**

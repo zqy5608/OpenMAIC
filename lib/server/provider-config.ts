@@ -48,6 +48,7 @@ const LLM_ENV_MAP: Record<string, string> = {
   GLM: 'glm',
   SILICONFLOW: 'siliconflow',
   DOUBAO: 'doubao',
+  OLLAMA: 'ollama',
 };
 
 const TTS_ENV_MAP: Record<string, string> = {

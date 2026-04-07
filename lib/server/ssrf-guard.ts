@@ -12,11 +12,22 @@ function isPrivate172(hostname: string): boolean {
   return second >= 16 && second <= 31;
 }
 
+/** Provider IDs that are explicitly allowed to use local/private URLs */
+const LOCAL_ALLOWED_PROVIDERS = new Set(['ollama']);
+
 /**
  * Validate a URL against SSRF attacks.
  * Returns null if the URL is safe, or an error message string if blocked.
+ *
+ * @param url - The URL to validate
+ * @param providerId - Optional provider ID. Some providers (e.g. Ollama) are
+ *                     explicitly allowed to use localhost/private URLs.
  */
-export function validateUrlForSSRF(url: string): string | null {
+export function validateUrlForSSRF(url: string, providerId?: string): string | null {
+  if (providerId && LOCAL_ALLOWED_PROVIDERS.has(providerId)) {
+    // Skip SSRF check for providers that are designed to run locally
+    return null;
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);

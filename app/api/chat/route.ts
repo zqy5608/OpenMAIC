@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
 
     const clientBaseUrl = body.baseUrl || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-      const ssrfError = validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = validateUrlForSSRF(clientBaseUrl, providerId);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }

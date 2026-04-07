@@ -34,7 +34,7 @@ export function resolveModel(params: {
 
   const clientBaseUrl = params.baseUrl || undefined;
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-    const ssrfError = validateUrlForSSRF(clientBaseUrl);
+    const ssrfError = validateUrlForSSRF(clientBaseUrl, providerId);
     if (ssrfError) {
       throw new Error(ssrfError);
     }
