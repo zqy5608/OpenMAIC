@@ -246,10 +246,13 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   // Navigate to initialSection when dialog opens
   useEffect(() => {
     if (open && initialSection) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync section from prop when dialog opens
       setActiveSection(initialSection);
     }
   }, [open, initialSection]);
+
+  useEffect(() => {
+    setSelectedWebSearchProviderId(webSearchProviderId);
+  }, [webSearchProviderId]);
 
   // Model editing state
   const [editingModel, setEditingModel] = useState<EditingModel | null>(null);

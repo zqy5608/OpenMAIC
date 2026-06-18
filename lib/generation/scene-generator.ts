@@ -35,7 +35,7 @@ import {
 } from './prompt-formatters';
 import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@/lib/types/slides';
 import type { QuizQuestion } from '@/lib/types/stage';
-import type { Action, DiscussionAction } from '@/lib/types/action';
+import type { Action, DiscussionAction, SpotlightAction, LaserAction } from '@/lib/types/action';
 import type {
   AgentInfo,
   SceneGenerationContext,
@@ -1113,6 +1113,16 @@ function processActions(
   const agentIds = new Set(agents?.map((a) => a.id) || []);
   const studentAgents = agents?.filter((a) => a.role === 'student') || [];
   const nonTeacherAgents = agents?.filter((a) => a.role !== 'teacher') || [];
+  const ensureValidSlideElement = (action: SpotlightAction | LaserAction): void => {
+    if (action.elementId && elementIds.has(action.elementId)) {
+      return;
+    }
+
+    if (elements.length > 0) {
+      action.elementId = elements[0].id;
+      log.warn(`Invalid elementId, falling back to first element: ${action.elementId}`);
+    }
+  };
 
   const processedActions = actions.map((action) => {
     // Ensure each action has an ID
@@ -1123,16 +1133,12 @@ function processActions(
 
     // Validate spotlight elementId
     if (processedAction.type === 'spotlight') {
-      const spotlightAction = processedAction;
-      if (!spotlightAction.elementId || !elementIds.has(spotlightAction.elementId)) {
-        // If elementId is invalid, try selecting the first element
-        if (elements.length > 0) {
-          spotlightAction.elementId = elements[0].id;
-          log.warn(
-            `Invalid elementId, falling back to first element: ${spotlightAction.elementId}`,
-          );
-        }
-      }
+      ensureValidSlideElement(processedAction);
+    }
+
+    // Validate laser elementId
+    if (processedAction.type === 'laser') {
+      ensureValidSlideElement(processedAction);
     }
 
     // Validate/fill discussion agentId

@@ -16,10 +16,15 @@ import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { formatTeacherPersonaForPrompt } from '@/lib/generation/prompt-formatters';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
-import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
+import {
+  resolveWebSearchApiKey,
+  resolveWebSearchBaseUrl,
+  resolveWebSearchProviderId,
+} from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
-import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
+import { searchWeb } from '@/lib/web-search/providers';
+import { formatSearchResultsAsContext } from '@/lib/web-search/utils';
 import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
@@ -29,6 +34,7 @@ import {
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
+import type { WebSearchProviderId } from '@/lib/web-search/types';
 
 const log = createLogger('Classroom');
 
@@ -37,6 +43,9 @@ export interface GenerateClassroomInput {
   pdfContent?: { text: string; images: string[] };
   language?: string;
   enableWebSearch?: boolean;
+  webSearchProviderId?: WebSearchProviderId;
+  webSearchApiKey?: string;
+  webSearchBaseUrl?: string;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
@@ -243,21 +252,31 @@ export async function generateClassroom(
   // Web search (optional, graceful degradation)
   let researchContext: string | undefined;
   if (input.enableWebSearch) {
-    const tavilyKey = resolveWebSearchApiKey();
-    if (tavilyKey) {
+    const providerId = resolveWebSearchProviderId(input.webSearchProviderId);
+    const apiKey = providerId
+      ? resolveWebSearchApiKey(providerId, input.webSearchApiKey)
+      : input.webSearchApiKey || '';
+    const baseUrl = providerId
+      ? resolveWebSearchBaseUrl(providerId, input.webSearchBaseUrl)
+      : input.webSearchBaseUrl;
+
+    if (providerId && apiKey) {
       try {
         const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
 
         log.info('Running web search for classroom generation', {
+          providerId,
           hasPdfContext: searchQuery.hasPdfContext,
           rawRequirementLength: searchQuery.rawRequirementLength,
           rewriteAttempted: searchQuery.rewriteAttempted,
           finalQueryLength: searchQuery.finalQueryLength,
         });
 
-        const searchResult = await searchWithTavily({
+        const searchResult = await searchWeb({
+          providerId,
           query: searchQuery.query,
-          apiKey: tavilyKey,
+          apiKey,
+          baseUrl,
         });
         researchContext = formatSearchResultsAsContext(searchResult);
         if (researchContext) {
@@ -267,7 +286,9 @@ export async function generateClassroom(
         log.warn('Web search failed, continuing without search context:', e);
       }
     } else {
-      log.warn('enableWebSearch is true but no Tavily API key configured, skipping web search');
+      log.warn(
+        'enableWebSearch is true but no supported web search provider is configured, skipping web search',
+      );
     }
   }
 

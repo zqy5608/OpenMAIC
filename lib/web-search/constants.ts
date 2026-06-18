@@ -13,6 +13,14 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     name: 'Tavily',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.tavily.com',
+    defaultSearchPath: '/search',
+  },
+  brave: {
+    id: 'brave',
+    name: 'Brave Search',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.search.brave.com',
+    defaultSearchPath: '/res/v1/llm/context',
   },
 };
 

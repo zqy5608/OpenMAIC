@@ -23,6 +23,7 @@ interface SpotlightRect {
 export function SpotlightOverlay() {
   const spotlightElementId = useCanvasStore.use.spotlightElementId();
   const spotlightOptions = useCanvasStore.use.spotlightOptions();
+  const laserElementId = useCanvasStore.use.laserElementId();
   const containerRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<SpotlightRect | null>(null);
 
@@ -71,6 +72,9 @@ export function SpotlightOverlay() {
 
   const active = !!spotlightElementId && !!spotlightOptions && !!rect;
   const dimness = spotlightOptions?.dimness ?? 0.7;
+  const showFallbackPointer = active && !laserElementId;
+  const pointerX = rect ? rect.x + rect.w / 2 : 0;
+  const pointerY = rect ? Math.max(2.4, rect.y - 2.2) : 0;
 
   return (
     <div
@@ -160,6 +164,55 @@ export function SpotlightOverlay() {
                 }}
               />
             </svg>
+
+            {showFallbackPointer && (
+              <motion.div
+                key={`spotlight-pointer-${spotlightElementId}`}
+                initial={{
+                  opacity: 0,
+                  left: `${pointerX}%`,
+                  top: `${pointerY + 1.2}%`,
+                  scale: 0.9,
+                }}
+                animate={{
+                  opacity: 1,
+                  left: `${pointerX}%`,
+                  top: `${pointerY}%`,
+                  scale: 1,
+                }}
+                exit={{
+                  opacity: 0,
+                  scale: 0.9,
+                }}
+                transition={{
+                  duration: 0.45,
+                  ease: [0.16, 1, 0.3, 1],
+                  opacity: { duration: 0.18 },
+                }}
+                className="absolute z-[101] pointer-events-none"
+              >
+                <div className="relative -translate-x-1/2 -translate-y-1/2">
+                  <motion.div
+                    animate={{ scale: [1, 2.8], opacity: [0.55, 0] }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1.4,
+                      ease: 'easeOut',
+                      repeatDelay: 0.25,
+                    }}
+                    className="absolute inset-0 rounded-full border border-[#ff6a4d]/70"
+                  />
+
+                  <div
+                    className="h-3 w-3 rounded-full bg-[#ff3b30]"
+                    style={{
+                      boxShadow:
+                        '0 0 0 6px rgba(255, 59, 48, 0.16), 0 0 14px 3px rgba(255, 59, 48, 0.28)',
+                    }}
+                  />
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

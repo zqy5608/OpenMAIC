@@ -302,15 +302,18 @@ function GenerationPreviewContent() {
         setWebSearchSources([]);
 
         const wsSettings = useSettingsStore.getState();
-        const wsApiKey =
-          wsSettings.webSearchProvidersConfig?.[wsSettings.webSearchProviderId]?.apiKey;
+        const wsProviderId = wsSettings.webSearchProviderId;
+        const wsProviderConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
+        const wsApiKey = wsProviderConfig?.apiKey;
         const res = await fetch('/api/web-search', {
           method: 'POST',
           headers: getApiHeaders(),
           body: JSON.stringify({
             query: currentSession.requirements.requirement,
             pdfText: currentSession.pdfText || undefined,
+            providerId: wsProviderId,
             apiKey: wsApiKey || undefined,
+            baseUrl: wsProviderConfig?.baseUrl || undefined,
           }),
           signal,
         });

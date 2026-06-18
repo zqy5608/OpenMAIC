@@ -9,6 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { createLogger } from '@/lib/logger';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import type { WebSearchProviderId } from '@/lib/web-search/types';
 
 const log = createLogger('ServerProviderConfig');
 
@@ -96,6 +98,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
+  BRAVE_SEARCH: 'brave',
 };
 
 // ---------------------------------------------------------------------------
@@ -408,8 +411,12 @@ export function resolveVideoBaseUrl(
 }
 
 // ---------------------------------------------------------------------------
-// Public API — Web Search (Tavily)
+// Public API — Web Search
 // ---------------------------------------------------------------------------
+
+function hasWebSearchProviderId(value: string): value is WebSearchProviderId {
+  return value in WEB_SEARCH_PROVIDERS;
+}
 
 /** Returns server-configured web search providers (no apiKeys exposed) */
 export function getServerWebSearchProviders(): Record<string, { baseUrl?: string }> {
@@ -422,10 +429,37 @@ export function getServerWebSearchProviders(): Record<string, { baseUrl?: string
   return result;
 }
 
-/** Resolve Tavily API key: client key > server key > TAVILY_API_KEY env > empty */
-export function resolveWebSearchApiKey(clientKey?: string): string {
+/**
+ * Resolve the provider to use for web search.
+ * If a preferred provider is valid, it is returned even when only a client API key is supplied.
+ * Otherwise, fall back to the first server-configured web search provider.
+ */
+export function resolveWebSearchProviderId(
+  preferredProviderId?: string,
+): WebSearchProviderId | undefined {
+  if (preferredProviderId && hasWebSearchProviderId(preferredProviderId)) {
+    return preferredProviderId;
+  }
+
+  return Object.keys(getConfig().webSearch).find((id): id is WebSearchProviderId =>
+    hasWebSearchProviderId(id),
+  );
+}
+
+/** Resolve web search API key: client key > server key > empty */
+export function resolveWebSearchApiKey(
+  providerId: WebSearchProviderId,
+  clientKey?: string,
+): string {
   if (clientKey) return clientKey;
-  const serverKey = getConfig().webSearch.tavily?.apiKey;
-  if (serverKey) return serverKey;
-  return process.env.TAVILY_API_KEY || '';
+  return getConfig().webSearch[providerId]?.apiKey || '';
+}
+
+/** Resolve web search base URL: client > server > undefined */
+export function resolveWebSearchBaseUrl(
+  providerId: WebSearchProviderId,
+  clientBaseUrl?: string,
+): string | undefined {
+  if (clientBaseUrl) return clientBaseUrl;
+  return getConfig().webSearch[providerId]?.baseUrl;
 }

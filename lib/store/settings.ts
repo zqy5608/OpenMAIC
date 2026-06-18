@@ -402,6 +402,7 @@ const getDefaultWebSearchConfig = () => ({
   webSearchProviderId: 'tavily' as WebSearchProviderId,
   webSearchProvidersConfig: {
     tavily: { apiKey: '', baseUrl: '', enabled: true },
+    brave: { apiKey: '', baseUrl: '', enabled: false },
   } as Record<WebSearchProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
 
@@ -571,6 +572,28 @@ function ensureBuiltInVideoProviders(state: Partial<SettingsState>): void {
     const providerId = pid as VideoProviderId;
     if (!state.videoProvidersConfig![providerId]) {
       state.videoProvidersConfig![providerId] = defaultConfig[providerId];
+    }
+  });
+}
+
+/**
+ * Ensure webSearchProvidersConfig includes all built-in web search providers.
+ * Called on every rehydrate so newly added search providers appear automatically.
+ */
+function ensureBuiltInWebSearchProviders(state: Partial<SettingsState>): void {
+  if (!state.webSearchProvidersConfig) return;
+  const defaultConfig = getDefaultWebSearchConfig().webSearchProvidersConfig;
+  Object.keys(WEB_SEARCH_PROVIDERS).forEach((pid) => {
+    const providerId = pid as WebSearchProviderId;
+    if (!state.webSearchProvidersConfig![providerId]) {
+      state.webSearchProvidersConfig![providerId] = defaultConfig[providerId];
+    } else {
+      state.webSearchProvidersConfig![providerId] = {
+        ...defaultConfig[providerId],
+        ...state.webSearchProvidersConfig![providerId],
+        enabled:
+          state.webSearchProvidersConfig![providerId].enabled ?? defaultConfig[providerId].enabled,
+      };
     }
   });
 }
@@ -1151,6 +1174,7 @@ export const useSettingsStore = create<SettingsState>()(
               const pdfFallback = buildFallback<PDFProviderId>(newPDFConfig);
               const imageFallback = buildFallback<ImageProviderId>(newImageConfig);
               const videoFallback = buildFallback<VideoProviderId>(newVideoConfig);
+              const webSearchFallback = buildFallback<WebSearchProviderId>(newWebSearchConfig);
 
               const validLLMProvider = validateProvider(
                 state.providerId,
@@ -1176,6 +1200,12 @@ export const useSettingsStore = create<SettingsState>()(
                 newPDFConfig,
                 pdfFallback,
                 'unpdf' as PDFProviderId,
+              );
+              const validWebSearchProvider = validateProvider(
+                state.webSearchProviderId,
+                newWebSearchConfig,
+                webSearchFallback,
+                'tavily' as WebSearchProviderId,
               );
               let validImageProvider = validateProvider(
                 state.imageProviderId,
@@ -1349,6 +1379,9 @@ export const useSettingsStore = create<SettingsState>()(
                 ...(validPDFProvider !== state.pdfProviderId && {
                   pdfProviderId: validPDFProvider as PDFProviderId,
                 }),
+                ...(validWebSearchProvider !== state.webSearchProviderId && {
+                  webSearchProviderId: validWebSearchProvider as WebSearchProviderId,
+                }),
                 ...(validImageProvider !== state.imageProviderId && {
                   imageProviderId: validImageProvider as ImageProviderId,
                 }),
@@ -1431,6 +1464,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInAudioProviders(state);
         ensureBuiltInImageProviders(state);
         ensureBuiltInVideoProviders(state);
+        ensureBuiltInWebSearchProviders(state);
 
         // Migrate from old ttsModel to new ttsProviderId
         if (state.ttsModel && !state.ttsProviderId) {
@@ -1550,6 +1584,7 @@ export const useSettingsStore = create<SettingsState>()(
           delete stateRecord.webSearchIsServerConfigured;
         }
 
+        ensureBuiltInWebSearchProviders(state);
         ensureValidProviderSelections(state);
 
         return state;
@@ -1562,6 +1597,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
+        ensureBuiltInWebSearchProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
         return merged as SettingsState;
       },

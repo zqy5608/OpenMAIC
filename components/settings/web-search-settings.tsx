@@ -7,6 +7,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
+import { buildWebSearchEndpointUrl } from '@/lib/web-search/utils';
 import { Eye, EyeOff } from 'lucide-react';
 
 interface WebSearchSettingsProps {
@@ -44,7 +45,7 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
         <>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-sm">{t('settings.webSearchApiKey')}</Label>
+              <Label className="text-sm">{`${provider.name} ${t('settings.webSearchApiKey')}`}</Label>
               <div className="relative">
                 <Input
                   name={`web-search-api-key-${selectedProviderId}`}
@@ -54,7 +55,9 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
                   autoCorrect="off"
                   spellCheck={false}
                   placeholder={
-                    isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
+                    isServerConfigured
+                      ? t('settings.optionalOverride')
+                      : t('settings.webSearchApiKeyPlaceholder')
                   }
                   value={webSearchProvidersConfig[selectedProviderId]?.apiKey || ''}
                   onChange={(e) =>
@@ -102,7 +105,9 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
               provider.defaultBaseUrl ||
               '';
             if (!effectiveBaseUrl) return null;
-            const fullUrl = effectiveBaseUrl + '/search';
+            const fullUrl = provider.defaultSearchPath
+              ? buildWebSearchEndpointUrl(effectiveBaseUrl, provider.defaultSearchPath)
+              : effectiveBaseUrl;
             return (
               <p className="text-xs text-muted-foreground break-all">
                 {t('settings.requestUrl')}: {fullUrl}
